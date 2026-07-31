@@ -19,7 +19,8 @@
 
   <properties>
     <java.version>21</java.version>
-    <testcontainers.version>1.20.1</testcontainers.version>
+    <!-- 1.21+ speaks Docker API 1.41; older versions default to 1.32, which Docker Engine 29 rejects. -->
+    <testcontainers.version>1.21.4</testcontainers.version>
   </properties>
 
   <dependencies>

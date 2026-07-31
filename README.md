@@ -19,7 +19,8 @@ docker-compose.yml         Local stack: Postgres, Kafka, Keycloak, backend, fron
 
 ## Running locally
 
-Requires Docker and Docker Compose.
+Requires Docker and Docker Compose. The first run also needs network access to Docker Hub, Maven
+Central and the npm registry — the two application images are built from source.
 
 ```bash
 docker compose up -d --build
@@ -29,7 +30,37 @@ This starts, in order (via healthchecks): Postgres, Kafka (KRaft, single node), 
 `workflow` auto-imported from `infra/keycloak/realm-export.json`), the backend on
 `http://localhost:8090`, and the frontend on `http://localhost:5173`.
 
+Then seed the demo template (see below) and open `http://localhost:5173`.
+
 Backend health: `http://localhost:8090/actuator/health`. API docs: `http://localhost:8090/swagger-ui.html`.
+
+Stop everything with `docker compose down` (add `-v` to drop the Postgres volume as well).
+
+### Running the app from source (no image builds)
+
+Useful while developing, and the only option if you cannot build the two application images. Start
+the infrastructure in Docker and run backend + frontend on the host:
+
+```bash
+# 1. infrastructure only
+docker compose up -d postgres kafka keycloak
+
+# 2. backend on http://localhost:8090 (JDK 21 + Maven)
+cd backend/workflow-service
+mvn -DskipTests package
+SERVER_PORT=8090 \
+SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/workflow \
+SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
+java -jar target/workflow-service-1.0.0.jar
+
+# 3. frontend on http://localhost:5173 (Node 22), proxies /api to localhost:8090
+cd frontend/workflow-ui
+npm install
+npm run dev
+```
+
+Keycloak stays on `http://localhost:8081` (admin console: `admin` / `admin`) in both modes, so the
+demo users and the seed script below work unchanged.
 
 ### Demo users (Keycloak realm `workflow`)
 
@@ -91,8 +122,12 @@ integration tests: Postgres + Kafka, plus a WireMock-backed real-JWT security te
 JDK 21, Maven, and Docker (for Testcontainers).
 
 **Frontend** — `cd frontend/workflow-ui && npm install && npm run dev` (proxies `/api` to
-`localhost:8090` in dev). `npm run build` / `npm run lint` / `npm run e2e` (Playwright, needs the
-full stack running — see `docker-compose up` above).
+`localhost:8090` in dev). `npm run build` / `npm run lint`.
+
+**End-to-end** — `npm run e2e` (Playwright; first run needs `npx playwright install chromium`).
+Requires the whole stack running *and* seeded (`npm run seed`), since the specs drive the demo
+template through a real browser and a real Keycloak login. The specs share one backend, so they run
+serially.
 
 ## Design system
 
@@ -114,14 +149,16 @@ wired into the MUI theme in `frontend/workflow-ui/src/theme.ts`.
 
 ## Verification status
 
-This was built without a local JDK 21 / Maven / Docker toolchain available in the authoring
-environment. What was actually verified here:
+Executed against a real toolchain (JDK 21, Maven 3.9, Node 22, Docker Engine 29):
 
-- Frontend: `npm run build` and `npm run lint` both pass clean against the real toolchain.
-- Backend, Docker Compose, and Playwright e2e: written and carefully reviewed, but **not
-  compiled/executed locally**. Before relying on this, run:
-  ```bash
-  cd backend/workflow-service && mvn verify
-  docker compose up -d --build
-  ```
-  and work through the golden-path walkthrough above.
+- **Backend** — `mvn verify` is green: 33 unit tests plus 5 integration tests against Testcontainers
+  Postgres 16 and Kafka (golden path, inbound `RequestAccepted` listener, JWT security with a
+  WireMock issuer). Flyway migrations apply and `ddl-auto: validate` passes against them.
+- **Frontend** — `npm run build` and `npm run lint` pass clean.
+- **Running system** — Postgres, Kafka and Keycloak (realm auto-import included) started from
+  `docker-compose.yml`, backend and Vite dev server run against them, `npm run seed` succeeded, and
+  the Playwright suite passes 3/3: the golden path (start → task → complete → COMPLETED + event
+  journal), reassignment with a mandatory reason, and analyst role restrictions.
+- **Not verified here** — the two application image builds (`docker compose up --build`): the
+  environment used for this check could not reach Docker Hub and the Maven/npm registries from
+  inside build containers. Everything the images run was exercised from source instead.

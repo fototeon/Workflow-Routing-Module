@@ -6,7 +6,7 @@ import { hasAnyRole, type Role } from './authConfig';
 export function RequireRole({ allow, children }: { allow: Role[]; children: ReactNode }) {
   const auth = useAuth();
 
-  if (!hasAnyRole(auth.user?.profile, allow)) {
+  if (!hasAnyRole(auth.user, allow)) {
     return (
       <Box sx={{ p: 4 }}>
         <Alert severity="warning">У вас нет прав для просмотра этой страницы.</Alert>

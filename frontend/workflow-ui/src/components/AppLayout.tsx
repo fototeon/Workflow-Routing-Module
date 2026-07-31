@@ -45,7 +45,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const roles = getRoles(auth.user?.profile);
+  const roles = getRoles(auth.user);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
 
   const visibleItems = NAV_ITEMS.filter((item) => item.allow.some((role) => roles.includes(role)));

@@ -5,5 +5,5 @@ import { hasAnyRole, type Role } from './authConfig';
 /** Inline conditional rendering for role-gated UI elements (buttons, actions) — renders nothing when disallowed. */
 export function RoleGate({ allow, children }: { allow: Role[]; children: ReactNode }) {
   const auth = useAuth();
-  return hasAnyRole(auth.user?.profile, allow) ? <>{children}</> : null;
+  return hasAnyRole(auth.user, allow) ? <>{children}</> : null;
 }

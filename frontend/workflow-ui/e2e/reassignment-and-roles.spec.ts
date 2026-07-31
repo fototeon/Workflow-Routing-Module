@@ -1,12 +1,16 @@
 import { expect, test } from '@playwright/test';
 import { loginAs } from './helpers/auth';
+import { openNewestCreatedTaskRow, startDemoProcess } from './helpers/process';
 
 test.describe('reassignment', () => {
   test('manager reassigns a task with a mandatory reason', async ({ page }) => {
     await loginAs(page, 'manager1', 'manager123');
 
-    await page.getByRole('button', { name: 'Задачи' }).click();
-    const firstActiveRow = page.getByRole('row').filter({ hasText: 'Переназначить' }).first();
+    // Start a process first: the golden path completes the task it creates, so nothing guarantees
+    // an open task is lying around for this test to reassign.
+    await startDemoProcess(page);
+
+    const firstActiveRow = await openNewestCreatedTaskRow(page);
     await expect(firstActiveRow).toBeVisible();
 
     await firstActiveRow.getByRole('button', { name: 'Переназначить' }).click();
