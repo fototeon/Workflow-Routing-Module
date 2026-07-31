@@ -1,0 +1,25 @@
+package ru.expertise.workflow.sla;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import ru.expertise.workflow.domain.SlaPolicy;
+
+import java.time.Instant;
+import java.time.ZoneId;
+
+@Component
+public class SlaDueDateCalculator {
+
+    private final BusinessCalendar businessCalendar;
+
+    public SlaDueDateCalculator(@Value("${workflow.sla.zone:UTC}") String zoneId) {
+        this.businessCalendar = new BusinessCalendar(ZoneId.of(zoneId));
+    }
+
+    public Instant computeDueAt(SlaPolicy policy, Instant from) {
+        if (policy.isBusinessHoursOnly()) {
+            return businessCalendar.addBusinessMinutes(from, policy.getDurationMinutes());
+        }
+        return from.plusSeconds(policy.getDurationMinutes() * 60L);
+    }
+}

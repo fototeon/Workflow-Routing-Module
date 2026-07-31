@@ -1,0 +1,148 @@
+stages:
+  - build
+  - test
+  - package
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end -DinstallAtEnd=true -DdeployAtEnd=true"
+  DOCKER_HOST: "tcp://docker:2375"
+  DOCKER_TLS_CERTDIR: ""
+  TESTCONTAINERS_HOST_OVERRIDE: "docker"
+
+.backend_cache: &backend_cache
+  cache:
+    key: maven-$CI_COMMIT_REF_SLUG
+    paths:
+      - .m2/repository
+
+.frontend_cache: &frontend_cache
+  cache:
+    key: npm-$CI_COMMIT_REF_SLUG
+    paths:
+      - frontend/workflow-ui/node_modules
+
+backend:build:
+  stage: build
+  image: maven:3.9-eclipse-temurin-21
+  <<: *backend_cache
+  before_script:
+    - cd backend/workflow-service
+  script:
+    - mvn $MAVEN_CLI_OPTS -DskipTests compile
+  rules:
+    - changes:
+        - backend/**/*
+
+backend:unit-test:
+  stage: test
+  image: maven:3.9-eclipse-temurin-21
+  <<: *backend_cache
+  needs: ["backend:build"]
+  before_script:
+    - cd backend/workflow-service
+  script:
+    - mvn $MAVEN_CLI_OPTS test
+  artifacts:
+    when: always
+    reports:
+      junit: backend/workflow-service/target/surefire-reports/TEST-*.xml
+  rules:
+    - changes:
+        - backend/**/*
+
+backend:integration-test:
+  stage: test
+  image: maven:3.9-eclipse-temurin-21
+  services:
+    - docker:24-dind
+  <<: *backend_cache
+  needs: ["backend:build"]
+  before_script:
+    - cd backend/workflow-service
+  script:
+    - mvn $MAVEN_CLI_OPTS verify
+  artifacts:
+    when: always
+    reports:
+      junit: backend/workflow-service/target/failsafe-reports/TEST-*.xml
+  rules:
+    - changes:
+        - backend/**/*
+
+frontend:build:
+  stage: build
+  image: node:22-alpine
+  <<: *frontend_cache
+  before_script:
+    - cd frontend/workflow-ui
+  script:
+    - npm ci
+    - npm run build
+  artifacts:
+    paths:
+      - frontend/workflow-ui/dist
+  rules:
+    - changes:
+        - frontend/**/*
+
+frontend:lint:
+  stage: test
+  image: node:22-alpine
+  <<: *frontend_cache
+  needs: ["frontend:build"]
+  before_script:
+    - cd frontend/workflow-ui
+  script:
+    - npm ci
+    - npm run lint
+  rules:
+    - changes:
+        - frontend/**/*
+
+# Manual/optional: spins up the full docker-compose stack (Postgres, Kafka, Keycloak, backend,
+# frontend), seeds a demo process, and runs the Playwright suite against it. Kept manual since it
+# needs the whole stack healthy inside dind, which is slower and more environment-sensitive than
+# the other jobs.
+frontend:e2e:
+  stage: test
+  image: mcr.microsoft.com/playwright:v1.62.0-jammy
+  services:
+    - docker:24-dind
+  needs: ["frontend:build"]
+  variables:
+    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
+    E2E_BASE_URL: "http://localhost:5173"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends docker.io docker-compose-v2
+  script:
+    - docker compose up -d --build
+    - timeout 180 sh -c 'until docker compose ps --status running | grep -q workflow-service; do sleep 5; done'
+    - cd frontend/workflow-ui
+    - npm ci
+    - npm run seed
+    - npx playwright test
+  after_script:
+    - docker compose down -v
+  when: manual
+  allow_failure: true
+  rules:
+    - changes:
+        - frontend/**/*
+
+docker:build:
+  stage: package
+  image: docker:24
+  services:
+    - docker:24-dind
+  needs:
+    - job: "backend:unit-test"
+      optional: true
+    - job: "frontend:build"
+      optional: true
+  script:
+    - docker build -t workflow-service:$CI_COMMIT_SHORT_SHA backend/workflow-service
+    - docker build -t workflow-ui:$CI_COMMIT_SHORT_SHA frontend/workflow-ui
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
