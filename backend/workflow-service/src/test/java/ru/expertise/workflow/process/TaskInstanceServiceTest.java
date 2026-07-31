@@ -47,11 +47,18 @@ class TaskInstanceServiceTest {
     private TaskInstance taskWithStatus(TaskInstanceStatus status) throws Exception {
         TaskInstance task = new TaskInstance();
         task.setStatus(status);
-        task.setProcessInstance(new ProcessInstance());
-        Field idField = TaskInstance.class.getDeclaredField("id");
-        idField.setAccessible(true);
-        idField.set(task, UUID.randomUUID());
+        ProcessInstance processInstance = new ProcessInstance();
+        assignId(processInstance);
+        task.setProcessInstance(processInstance);
+        assignId(task);
         return task;
+    }
+
+    /** Persisted entities always carry a generated id; unit tests fake it so event payloads look realistic. */
+    private void assignId(Object entity) throws Exception {
+        Field idField = entity.getClass().getDeclaredField("id");
+        idField.setAccessible(true);
+        idField.set(entity, UUID.randomUUID());
     }
 
     @Test

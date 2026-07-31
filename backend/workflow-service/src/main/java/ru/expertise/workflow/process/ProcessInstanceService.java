@@ -67,6 +67,12 @@ public class ProcessInstanceService {
         this.self = self;
     }
 
+    /**
+     * Transactional so the definition (and its lazy {@code slaPolicy}) stays attached to the same
+     * persistence context that {@link #createInstance} later reads it from — loading it outside a
+     * transaction yields a detached proxy that blows up with {@code LazyInitializationException}.
+     */
+    @Transactional
     public ProcessInstance startInstance(UUID processDefinitionId, String businessKey,
                                           Map<String, Object> attributes, String correlationId) {
         ProcessDefinition definition = processDefinitionRepository.findById(processDefinitionId)
@@ -77,6 +83,7 @@ public class ProcessInstanceService {
         return self.createInstance(definition, businessKey, attributes, correlationId, null);
     }
 
+    @Transactional
     public ProcessInstance startSubProcess(UUID parentInstanceId, UUID subProcessDefinitionId,
                                             String businessKey, Map<String, Object> attributes, String correlationId) {
         ProcessInstance parent = get(parentInstanceId);

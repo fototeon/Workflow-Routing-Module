@@ -7,28 +7,31 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.KafkaContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * Shared Testcontainers (Postgres + Kafka) fixture for integration tests. Each subclass gets a
- * fresh Spring context (dirtied per class) sharing these same two containers across the whole run.
+ * Shared Testcontainers (Postgres + Kafka) fixture for integration tests. The containers are
+ * started once per JVM and deliberately never stopped between test classes (the "singleton
+ * container" pattern): Spring caches one application context across all these classes, so
+ * per-class container restarts would leave that context pointing at a dead datasource port.
+ * Testcontainers' own shutdown hook removes them when the JVM exits.
  */
 @Tag("integration")
-@Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
 public abstract class AbstractIntegrationTest {
 
-    @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"))
             .withDatabaseName("workflow")
             .withUsername("workflow")
             .withPassword("workflow");
 
-    @Container
     static final KafkaContainer KAFKA = new KafkaContainer(DockerImageName.parse("confluentinc/cp-kafka:7.5.0"));
+
+    static {
+        POSTGRES.start();
+        KAFKA.start();
+    }
 
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {

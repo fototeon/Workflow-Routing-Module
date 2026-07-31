@@ -83,6 +83,13 @@ public class TaskInstanceService {
     @Audited(DomainEventType.TASK_COMPLETED)
     public TaskInstance completeTask(UUID taskId, String actorId) {
         TaskInstance task = get(taskId);
+        if (task.getStatus() == TaskInstanceStatus.CREATED) {
+            // Completing an unclaimed task implicitly takes it into work first: CREATED -> COMPLETED
+            // is not a legal transition on its own (see TaskInstanceStatus), and there is no separate
+            // "take into work" action in the API/UI.
+            assertTransitionAllowed(task.getStatus(), TaskInstanceStatus.IN_PROGRESS);
+            task.setStatus(TaskInstanceStatus.IN_PROGRESS);
+        }
         assertTransitionAllowed(task.getStatus(), TaskInstanceStatus.COMPLETED);
 
         task.setStatus(TaskInstanceStatus.COMPLETED);

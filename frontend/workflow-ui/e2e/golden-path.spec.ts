@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { loginAs } from './helpers/auth';
+import { openNewestCreatedTaskRow, startDemoProcess } from './helpers/process';
 
 /**
  * Golden path per TZ-02-WORKFLOW §12: log in as coordinator, start the seeded demo process
@@ -13,26 +14,17 @@ test.describe('golden path', () => {
 
     await expect(page.getByRole('heading', { name: 'Реестр процессов' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Запустить процесс' }).click();
-    await page.getByLabel('Шаблон процесса').click();
-    await page.getByRole('option').first().click();
+    const businessKey = await startDemoProcess(page);
+    // status shows both in the chip and in the process-map stepper, hence first()
+    await expect(page.getByText('Выполняется').first()).toBeVisible();
 
-    const businessKey = `E2E-${Date.now()}`;
-    await page.getByLabel('Бизнес-ключ').fill(businessKey);
-    await page.getByLabel('Атрибуты (JSON)').fill('{"requestType":"COMPLEX"}');
-    await page.getByRole('button', { name: 'Запустить', exact: true }).click();
-
-    await expect(page.getByText(businessKey)).toBeVisible();
-    await expect(page.getByText('Выполняется')).toBeVisible();
-
-    await page.getByRole('button', { name: 'Задачи' }).click();
-    const taskRow = page.getByRole('row').filter({ hasText: 'EXPERT_REVIEW' }).first();
+    const taskRow = await openNewestCreatedTaskRow(page);
     await expect(taskRow).toBeVisible();
     await taskRow.getByRole('button', { name: 'Выполнить' }).click();
 
     await page.getByRole('button', { name: 'Процессы' }).click();
     await page.getByRole('row').filter({ hasText: businessKey }).click();
-    await expect(page.getByText('Завершён')).toBeVisible();
-    await expect(page.getByText('TaskCompleted')).toBeVisible();
+    await expect(page.getByText('Завершён').first()).toBeVisible();
+    await expect(page.getByText('TaskCompleted').first()).toBeVisible();
   });
 });
