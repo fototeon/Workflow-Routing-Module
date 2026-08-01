@@ -42,26 +42,47 @@ Stop everything with `docker compose down` (add `-v` to drop the Postgres volume
 Useful while developing, and the only option if you cannot build the two application images. Start
 the infrastructure in Docker and run backend + frontend on the host:
 
-```bash
+```
 # 1. infrastructure only
 docker compose up -d postgres kafka keycloak
 
-# 2. backend on http://localhost:8090 (JDK 21 + Maven)
+# 2. backend on http://localhost:8090 (JDK 21 + Maven), in its own terminal
 cd backend/workflow-service
 mvn -DskipTests package
-SERVER_PORT=8090 \
-SPRING_DATASOURCE_URL=jdbc:postgresql://localhost:5432/workflow \
-SPRING_KAFKA_BOOTSTRAP_SERVERS=localhost:9092 \
-java -jar target/workflow-service-1.0.0.jar
+java -jar target/workflow-service-1.0.0.jar --server.port=8090
 
-# 3. frontend on http://localhost:5173 (Node 22), proxies /api to localhost:8090
+# 3. frontend on http://localhost:5173 (Node 22), in another terminal
 cd frontend/workflow-ui
 npm install
 npm run dev
 ```
 
+The commands above work as-is in bash, PowerShell and cmd. Port `8090` is not the service's own
+default (`8080`) — it is what the Vite dev server proxies `/api` to, so the backend has to be
+started with that argument or the UI cannot reach it. Everything else — Postgres, Kafka, the
+Keycloak issuer — already defaults to the addresses the compose stack exposes on localhost.
+
 Keycloak stays on `http://localhost:8081` (admin console: `admin` / `admin`) in both modes, so the
 demo users and the seed script below work unchanged.
+
+### If the UI shows an empty register and the Vite terminal logs `ECONNREFUSED`
+
+```
+[vite] http proxy error: /api/process-instances ... AggregateError [ECONNREFUSED]
+```
+
+The UI and Keycloak are fine (you were able to log in) — nothing is listening on `localhost:8090`.
+Check, in order:
+
+1. Is the backend running at all? `curl http://localhost:8090/actuator/health` should answer
+   `{"status":"UP"}`. Open the same URL in a browser if you have no `curl`.
+2. Is it on the right port? Started without `--server.port=8090` it listens on `8080`; its startup
+   log line reads `Tomcat started on port 8090`. Either restart it with the argument, or point the
+   proxy at your port in `frontend/workflow-ui/vite.config.ts`.
+3. Running the full compose stack instead? `docker compose ps` must show `workflow-service` as
+   running, and `docker compose logs workflow-service` shows why if it is not.
+4. Backend up but requests still fail — check its own terminal: a database or Kafka connection
+   error there means `docker compose ps` is worth a look too.
 
 ### Demo users (Keycloak realm `workflow`)
 
