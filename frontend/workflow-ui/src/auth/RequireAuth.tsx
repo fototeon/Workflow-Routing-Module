@@ -1,30 +1,13 @@
-import { type ReactNode, useEffect } from 'react';
-import { useAuth } from 'react-oidc-context';
-import { Box, CircularProgress, Alert } from '@mui/material';
+import { type ReactNode } from 'react';
+import { useAuth } from './authContext';
+import { LoginPage } from './LoginPage';
 
+/** Gate for the whole application: without a session the user sees the sign-in screen instead. */
 export function RequireAuth({ children }: { children: ReactNode }) {
   const auth = useAuth();
 
-  useEffect(() => {
-    if (!auth.isLoading && !auth.isAuthenticated && !auth.activeNavigator) {
-      auth.signinRedirect();
-    }
-  }, [auth]);
-
-  if (auth.isLoading || (!auth.isAuthenticated && !auth.error)) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
-
-  if (auth.error) {
-    return (
-      <Box sx={{ p: 4 }}>
-        <Alert severity="error">Ошибка аутентификации: {auth.error.message}</Alert>
-      </Box>
-    );
+  if (!auth.isAuthenticated) {
+    return <LoginPage />;
   }
 
   return <>{children}</>;

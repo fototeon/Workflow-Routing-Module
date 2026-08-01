@@ -1,11 +1,10 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
-/** Drives Keycloak's hosted login form after the app redirects there for an unauthenticated visit. */
+/** Signs in through the application's own login form, which exchanges the credentials for a token at Keycloak. */
 export async function loginAs(page: Page, username: string, password: string): Promise<void> {
   await page.goto('/');
-  await page.waitForURL(/\/realms\/workflow\/protocol\/openid-connect\/auth/);
-  await page.locator('#username').fill(username);
-  await page.locator('#password').fill(password);
-  await page.locator('#kc-login').click();
-  await page.waitForURL((url) => !url.pathname.includes('/realms/'));
+  await page.getByLabel('Логин').fill(username);
+  await page.getByLabel('Пароль').fill(password);
+  await page.getByRole('button', { name: 'Войти' }).click();
+  await expect(page.getByRole('button', { name: 'Процессы' })).toBeVisible();
 }
