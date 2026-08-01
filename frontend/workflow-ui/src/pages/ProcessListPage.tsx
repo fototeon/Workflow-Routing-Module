@@ -71,6 +71,8 @@ export function ProcessListPage() {
       size,
       status: status || undefined,
       businessKey: businessKey || undefined,
+      // newest first, so a just-started process is always at the top of the register
+      sort: 'createdAt,desc',
     })
       .then((result) => {
         if (cancelled) return;

@@ -42,7 +42,8 @@ export function TaskListPage() {
 
   useEffect(() => {
     let cancelled = false;
-    searchTasks({ page, size, status: status || undefined }).then((result) => {
+    // newest first, so a freshly created task is always at the top of the list
+    searchTasks({ page, size, status: status || undefined, sort: 'createdAt,desc' }).then((result) => {
       if (cancelled) return;
       setRows(result.content);
       setTotalElements(result.totalElements);

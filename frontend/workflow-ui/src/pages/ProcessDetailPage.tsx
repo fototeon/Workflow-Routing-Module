@@ -72,6 +72,15 @@ export function ProcessDetailPage() {
         {instance.currentStepCode && (
           <Typography sx={{ color: colors.text.secondary }}>Шаг: {instance.currentStepCode}</Typography>
         )}
+        {instance.parentInstanceId && (
+          <Button
+            size="small"
+            onClick={() => navigate(`/processes/${instance.parentInstanceId}`)}
+            sx={{ color: colors.text.secondary }}
+          >
+            Родительский процесс
+          </Button>
+        )}
         <RoleGate allow={[ROLES.COORDINATOR, ROLES.MANAGER, ROLES.ADMIN]}>
           {canCancel && (
             <Button size="small" color="error" variant="outlined" onClick={() => setCancelOpen(true)}>

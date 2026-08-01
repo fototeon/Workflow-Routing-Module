@@ -15,6 +15,7 @@ frontend/workflow-ui       React + TypeScript + Vite + MUI admin/operator UI
 infra/keycloak             Realm export for local OIDC auth (roles + demo users)
 docker-compose.yml         Local stack: Postgres, Kafka, Keycloak, backend, frontend
 .gitlab-ci.yml             Build/test/package pipeline
+TEST-DATA.md               Seeded demo dataset and what each item is meant to exercise
 ```
 
 ## Running locally
@@ -71,11 +72,13 @@ demo users and the seed script below work unchanged.
 | `coordinator1` | `coordinator123`| COORDINATOR |
 | `analyst1`     | `analyst123`    | ANALYST     |
 
-### Seed a demo process
+### Seed the demo dataset
 
-The module ships with no process templates out of the box (they're created through the UI/API).
-A seed script creates one demo template end-to-end (SLA policy → process definition → routing rule
-→ publish) so there's something to walk through immediately:
+The module ships with no data out of the box (templates and requests are created through the UI or
+the API). The seed script fills a database that covers the module's features and every role — three
+SLA policies, five process templates (including a deliberately unpublished draft) and eight requests
+in different states, one of which breaches its SLA within five minutes so escalation is observable
+live:
 
 ```bash
 cd frontend/workflow-ui
@@ -83,13 +86,18 @@ npm install
 npm run seed
 ```
 
+Re-running it is safe: existing items are skipped, not duplicated. **[TEST-DATA.md](TEST-DATA.md)**
+lists every seeded item, the role scenarios it supports, and the expected outcomes (including error
+codes for the negative cases).
+
 ### Golden-path walkthrough (maps to TZ §12 acceptance criteria)
 
 The UI is in Russian; English names of the corresponding screen are given in brackets.
 
 1. Open `http://localhost:5173`, log in as `coordinator1`.
-2. **Процессы [Processes] → Запустить процесс [Start new process]** — pick the seeded template,
-   give it a business key, set attributes to `{"requestType": "COMPLEX"}`, start it. The instance
+2. **Процессы [Processes] → Запустить процесс [Start new process]** — pick the seeded
+   `DEMO_EXPERTISE_REVIEW` template, give it a business key, set attributes to
+   `{"requestType": "COMPLEX"}`, start it. The instance
    becomes `Выполняется` (RUNNING) and a task is created and routed via the JSON condition tree
    (REQ-02-001, REQ-02-004).
 3. **Задачи [Tasks]** — the new task appears, assigned to the `COORDINATOR` role. Click
@@ -156,9 +164,12 @@ Executed against a real toolchain (JDK 21, Maven 3.9, Node 22, Docker Engine 29)
   WireMock issuer). Flyway migrations apply and `ddl-auto: validate` passes against them.
 - **Frontend** — `npm run build` and `npm run lint` pass clean.
 - **Running system** — Postgres, Kafka and Keycloak (realm auto-import included) started from
-  `docker-compose.yml`, backend and Vite dev server run against them, `npm run seed` succeeded, and
+  `docker-compose.yml`, backend and Vite dev server run against them, the demo dataset seeded, and
   the Playwright suite passes 3/3: the golden path (start → task → complete → COMPLETED + event
   journal), reassignment with a mandatory reason, and analyst role restrictions.
+- **Demo dataset** — every item in [TEST-DATA.md](TEST-DATA.md) was created and checked on that
+  running stack, including the documented HTTP codes for the negative cases and the live SLA run
+  (escalation to MANAGER at 40%, to ADMIN at 80%, breach at 100%).
 - **Not verified here** — the two application image builds (`docker compose up --build`): the
   environment used for this check could not reach Docker Hub and the Maven/npm registries from
   inside build containers. Everything the images run was exercised from source instead.
