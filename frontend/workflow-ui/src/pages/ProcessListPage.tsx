@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -22,6 +23,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { listPublishedProcessDefinitions } from '../api/processDefinitions';
 import { searchProcessInstances, startProcessInstance } from '../api/processInstances';
+import { describeLoadError } from '../api/errors';
 import type { ProcessDefinition, ProcessInstance, ProcessInstanceStatus } from '../api/types';
 import { RoleGate } from '../auth/RoleGate';
 import { ROLES } from '../auth/authConfig';
@@ -48,6 +50,7 @@ export function ProcessListPage() {
   const [status, setStatus] = useState<ProcessInstanceStatus | ''>('');
   const [businessKey, setBusinessKey] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   const [startOpen, setStartOpen] = useState(false);
@@ -66,6 +69,7 @@ export function ProcessListPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
     searchProcessInstances({
       page,
       size,
@@ -79,6 +83,12 @@ export function ProcessListPage() {
         setRows(result.content);
         setTotalElements(result.totalElements);
       })
+      .catch((error) => {
+        if (cancelled) return;
+        setRows([]);
+        setTotalElements(0);
+        setLoadError(describeLoadError(error, 'процессы'));
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
@@ -89,6 +99,11 @@ export function ProcessListPage() {
 
   return (
     <Box>
+      {loadError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {loadError}
+        </Alert>
+      )}
       <Stack direction="row" sx={{ justifyContent: 'flex-end', alignItems: 'center', mb: 2 }}>
         <RoleGate allow={[ROLES.COORDINATOR, ROLES.MANAGER, ROLES.ADMIN]}>
           <Button variant="contained" onClick={() => setStartOpen(true)}>

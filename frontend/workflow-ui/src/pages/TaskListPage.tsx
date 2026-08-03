@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -19,6 +20,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { completeTask, reassignTask, searchTasks } from '../api/tasks';
+import { describeLoadError } from '../api/errors';
 import type { TaskInstance, TaskInstanceStatus } from '../api/types';
 import { RoleGate } from '../auth/RoleGate';
 import { ROLES } from '../auth/authConfig';
@@ -39,15 +41,24 @@ export function TaskListPage() {
   const [reassignTo, setReassignTo] = useState('');
   const [reassignReason, setReassignReason] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    setLoadError(null);
     // newest first, so a freshly created task is always at the top of the list
-    searchTasks({ page, size, status: status || undefined, sort: 'createdAt,desc' }).then((result) => {
-      if (cancelled) return;
-      setRows(result.content);
-      setTotalElements(result.totalElements);
-    });
+    searchTasks({ page, size, status: status || undefined, sort: 'createdAt,desc' })
+      .then((result) => {
+        if (cancelled) return;
+        setRows(result.content);
+        setTotalElements(result.totalElements);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setRows([]);
+        setTotalElements(0);
+        setLoadError(describeLoadError(error, 'задачи'));
+      });
     return () => {
       cancelled = true;
     };
@@ -55,6 +66,11 @@ export function TaskListPage() {
 
   return (
     <Box>
+      {loadError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {loadError}
+        </Alert>
+      )}
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <TextField
           select
