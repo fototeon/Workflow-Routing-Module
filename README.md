@@ -16,6 +16,7 @@ infra/keycloak             Realm export for local OIDC auth (roles + demo users)
 docker-compose.yml         Local stack: Postgres, Kafka, Keycloak, backend, frontend
 .gitlab-ci.yml             Build/test/package pipeline
 TEST-DATA.md               Seeded demo dataset and what each item is meant to exercise
+TZ-COMPLIANCE.md           Requirement-by-requirement audit against TZ-02-WORKFLOW v1.0
 ```
 
 ## Running locally
