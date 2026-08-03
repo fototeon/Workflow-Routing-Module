@@ -50,6 +50,17 @@ public class ProcessInstance extends BaseAuditableEntity {
     @Column(name = "completed_at")
     private Instant completedAt;
 
+    /** Organization owning the case, taken from the start attributes — input to the access model (TZ §10). */
+    @Column(name = "owner_org_id")
+    private String ownerOrgId;
+
+    /** User the case belongs to, taken from the start attributes — input to the access model (TZ §10). */
+    @Column(name = "owner_user_id")
+    private String ownerUserId;
+
+    @Column(name = "suspended_at")
+    private Instant suspendedAt;
+
     @Version
     private int version;
 
@@ -119,6 +130,30 @@ public class ProcessInstance extends BaseAuditableEntity {
 
     public void setCompletedAt(Instant completedAt) {
         this.completedAt = completedAt;
+    }
+
+    public String getOwnerOrgId() {
+        return ownerOrgId;
+    }
+
+    public void setOwnerOrgId(String ownerOrgId) {
+        this.ownerOrgId = ownerOrgId;
+    }
+
+    public String getOwnerUserId() {
+        return ownerUserId;
+    }
+
+    public void setOwnerUserId(String ownerUserId) {
+        this.ownerUserId = ownerUserId;
+    }
+
+    public Instant getSuspendedAt() {
+        return suspendedAt;
+    }
+
+    public void setSuspendedAt(Instant suspendedAt) {
+        this.suspendedAt = suspendedAt;
     }
 
     public int getVersion() {

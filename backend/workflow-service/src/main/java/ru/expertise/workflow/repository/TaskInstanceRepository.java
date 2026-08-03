@@ -20,7 +20,7 @@ public interface TaskInstanceRepository
             join fetch t.processInstance pi
             join fetch pi.processDefinition pd
             left join fetch pd.slaPolicy sp
-            where t.status not in :terminalStatuses and t.dueAt is not null
+            where t.status not in :terminalStatuses and t.dueAt is not null and t.slaPausedAt is null
             """)
     List<TaskInstance> findActiveTasksWithSla(@Param("terminalStatuses") List<TaskInstanceStatus> terminalStatuses);
 }

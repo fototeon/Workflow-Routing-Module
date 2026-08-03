@@ -6,11 +6,20 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.expertise.workflow.domain.ProcessDefinition;
 import ru.expertise.workflow.domain.ProcessDefinitionStatus;
+import ru.expertise.workflow.domain.ProcessEventLog;
 import ru.expertise.workflow.domain.RoutingRule;
 import ru.expertise.workflow.domain.SlaPolicy;
 import ru.expertise.workflow.repository.ProcessDefinitionRepository;
+import ru.expertise.workflow.repository.ProcessEventLogRepository;
 import ru.expertise.workflow.repository.RoutingRuleRepository;
+import ru.expertise.workflow.audit.AuditContext;
+import ru.expertise.workflow.audit.Audited;
+import ru.expertise.workflow.config.WorkflowProperties;
+import ru.expertise.workflow.events.DomainEventType;
+import ru.expertise.workflow.events.OutboxEventWriter;
 import ru.expertise.workflow.repository.SlaPolicyRepository;
+
+import java.util.Map;
 
 import java.util.List;
 import java.util.UUID;
@@ -18,19 +27,39 @@ import java.util.UUID;
 @Service
 public class ProcessDefinitionService {
 
+    private static final String SUBJECT_DEFINITION = "ProcessDefinition";
+
     private final ProcessDefinitionRepository processDefinitionRepository;
     private final RoutingRuleRepository routingRuleRepository;
     private final SlaPolicyRepository slaPolicyRepository;
+    private final OutboxEventWriter outboxEventWriter;
+    private final ProcessEventLogRepository processEventLogRepository;
+    private final WorkflowProperties properties;
 
     public ProcessDefinitionService(ProcessDefinitionRepository processDefinitionRepository,
                                      RoutingRuleRepository routingRuleRepository,
-                                     SlaPolicyRepository slaPolicyRepository) {
+                                     SlaPolicyRepository slaPolicyRepository,
+                                     OutboxEventWriter outboxEventWriter,
+                                     ProcessEventLogRepository processEventLogRepository,
+                                     WorkflowProperties properties) {
         this.processDefinitionRepository = processDefinitionRepository;
         this.routingRuleRepository = routingRuleRepository;
         this.slaPolicyRepository = slaPolicyRepository;
+        this.outboxEventWriter = outboxEventWriter;
+        this.processEventLogRepository = processEventLogRepository;
+        this.properties = properties;
+    }
+
+    /** Journals a configuration change and publishes it, so template edits are auditable (TZ §10, REQ-02-002). */
+    private void recordConfigChange(DomainEventType type, String subjectType, UUID subjectId, Map<String, Object> payload) {
+        AuditContext.subject(subjectType, subjectId);
+        payload.forEach(AuditContext::detail);
+        outboxEventWriter.enqueue(subjectType, subjectId.toString(), type,
+                properties.getKafka().getTopicDefinitionEvents(), null, null, payload);
     }
 
     @Transactional
+    @Audited(DomainEventType.DEFINITION_CREATED)
     public ProcessDefinition create(String code, String name, UUID slaPolicyId) {
         ProcessDefinition definition = new ProcessDefinition();
         definition.setCode(code);
@@ -38,10 +67,15 @@ public class ProcessDefinitionService {
         definition.setVersion(nextVersion(code));
         definition.setStatus(ProcessDefinitionStatus.DRAFT);
         definition.setSlaPolicy(resolveSlaPolicy(slaPolicyId));
-        return processDefinitionRepository.save(definition);
+        definition = processDefinitionRepository.save(definition);
+
+        recordConfigChange(DomainEventType.DEFINITION_CREATED, SUBJECT_DEFINITION, definition.getId(),
+                Map.of("code", definition.getCode(), "name", definition.getName(), "version", definition.getVersion()));
+        return definition;
     }
 
     @Transactional
+    @Audited(DomainEventType.DEFINITION_UPDATED)
     public ProcessDefinition update(UUID id, String name, UUID slaPolicyId) {
         ProcessDefinition definition = get(id);
         if (definition.getStatus() != ProcessDefinitionStatus.DRAFT) {
@@ -49,10 +83,15 @@ public class ProcessDefinitionService {
         }
         definition.setName(name);
         definition.setSlaPolicy(resolveSlaPolicy(slaPolicyId));
-        return processDefinitionRepository.save(definition);
+        definition = processDefinitionRepository.save(definition);
+
+        recordConfigChange(DomainEventType.DEFINITION_UPDATED, SUBJECT_DEFINITION, definition.getId(),
+                Map.of("code", definition.getCode(), "name", definition.getName(), "version", definition.getVersion()));
+        return definition;
     }
 
     @Transactional
+    @Audited(DomainEventType.DEFINITION_PUBLISHED)
     public ProcessDefinition publish(UUID id) {
         ProcessDefinition definition = get(id);
         if (definition.getStatus() != ProcessDefinitionStatus.DRAFT) {
@@ -62,20 +101,27 @@ public class ProcessDefinitionService {
             throw new IllegalStateException("Cannot publish a process definition with no routing rules");
         }
         definition.setStatus(ProcessDefinitionStatus.PUBLISHED);
-        return processDefinitionRepository.save(definition);
+        definition = processDefinitionRepository.save(definition);
+
+        recordConfigChange(DomainEventType.DEFINITION_PUBLISHED, SUBJECT_DEFINITION, definition.getId(),
+                Map.of("code", definition.getCode(), "version", definition.getVersion()));
+        return definition;
     }
 
     @Transactional
+    @Audited(DomainEventType.DEFINITION_ARCHIVED)
     public ProcessDefinition archive(UUID id) {
         ProcessDefinition definition = get(id);
-        if (definition.getStatus() == ProcessDefinitionStatus.ARCHIVED) {
-            return definition;
-        }
         definition.setStatus(ProcessDefinitionStatus.ARCHIVED);
-        return processDefinitionRepository.save(definition);
+        definition = processDefinitionRepository.save(definition);
+
+        recordConfigChange(DomainEventType.DEFINITION_ARCHIVED, SUBJECT_DEFINITION, definition.getId(),
+                Map.of("code", definition.getCode(), "version", definition.getVersion()));
+        return definition;
     }
 
     @Transactional
+    @Audited(DomainEventType.ROUTING_RULE_ADDED)
     public RoutingRule addRoutingRule(UUID definitionId, String name, int priority,
                                        JsonNode conditionTree,
                                        String targetStepCode, String targetRole) {
@@ -90,10 +136,16 @@ public class ProcessDefinitionService {
         rule.setConditionTree(conditionTree);
         rule.setTargetStepCode(targetStepCode);
         rule.setTargetRole(targetRole);
-        return routingRuleRepository.save(rule);
+        rule = routingRuleRepository.save(rule);
+
+        recordConfigChange(DomainEventType.ROUTING_RULE_ADDED, SUBJECT_DEFINITION, definitionId,
+                Map.of("routingRuleId", rule.getId(), "name", rule.getName(),
+                        "priority", rule.getPriority(), "targetStepCode", rule.getTargetStepCode()));
+        return rule;
     }
 
     @Transactional
+    @Audited(DomainEventType.ROUTING_RULE_REMOVED)
     public void deleteRoutingRule(UUID definitionId, UUID ruleId) {
         ProcessDefinition definition = get(definitionId);
         if (definition.getStatus() != ProcessDefinitionStatus.DRAFT) {
@@ -102,6 +154,16 @@ public class ProcessDefinitionService {
         RoutingRule rule = routingRuleRepository.findById(ruleId)
                 .orElseThrow(() -> new EntityNotFoundException("RoutingRule " + ruleId + " not found"));
         routingRuleRepository.delete(rule);
+
+        recordConfigChange(DomainEventType.ROUTING_RULE_REMOVED, SUBJECT_DEFINITION, definitionId,
+                Map.of("routingRuleId", ruleId, "name", rule.getName()));
+    }
+
+    /** Configuration journal of a template: creation, edits, rule changes and publication (TZ §10). */
+    @Transactional(readOnly = true)
+    public List<ProcessEventLog> getJournal(UUID definitionId) {
+        return processEventLogRepository.findBySubjectTypeAndSubjectIdOrderByOccurredAtAsc(
+                SUBJECT_DEFINITION, definitionId.toString());
     }
 
     @Transactional(readOnly = true)

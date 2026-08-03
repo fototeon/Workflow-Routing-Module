@@ -9,4 +9,7 @@ import java.util.UUID;
 public interface ProcessEventLogRepository extends JpaRepository<ProcessEventLog, UUID> {
 
     List<ProcessEventLog> findByProcessInstanceIdOrderByOccurredAtAsc(UUID processInstanceId);
+
+    /** Journal of a configuration subject (template, SLA policy) — entries have no process instance. */
+    List<ProcessEventLog> findBySubjectTypeAndSubjectIdOrderByOccurredAtAsc(String subjectType, String subjectId);
 }

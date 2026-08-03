@@ -9,6 +9,7 @@ import ru.expertise.workflow.config.WorkflowProperties;
 import ru.expertise.workflow.domain.TaskInstance;
 import ru.expertise.workflow.domain.TaskInstanceStatus;
 import ru.expertise.workflow.events.DomainEventType;
+import ru.expertise.workflow.events.NotificationPublisher;
 import ru.expertise.workflow.events.OutboxEventWriter;
 import ru.expertise.workflow.process.InvalidStatusTransitionException;
 import ru.expertise.workflow.repository.TaskInstanceRepository;
@@ -26,13 +27,16 @@ public class TaskSlaProcessor {
 
     private final TaskInstanceRepository taskInstanceRepository;
     private final OutboxEventWriter outboxEventWriter;
+    private final NotificationPublisher notificationPublisher;
     private final WorkflowProperties properties;
 
     public TaskSlaProcessor(TaskInstanceRepository taskInstanceRepository,
                              OutboxEventWriter outboxEventWriter,
+                             NotificationPublisher notificationPublisher,
                              WorkflowProperties properties) {
         this.taskInstanceRepository = taskInstanceRepository;
         this.outboxEventWriter = outboxEventWriter;
+        this.notificationPublisher = notificationPublisher;
         this.properties = properties;
     }
 
@@ -55,6 +59,7 @@ public class TaskSlaProcessor {
                 properties.getKafka().getTopicSlaEvents(), null, task.getProcessInstance().getBusinessKey(),
                 Map.of("taskInstanceId", task.getId(), "processInstanceId", task.getProcessInstance().getId(),
                         "dueAt", task.getDueAt().toString()));
+        notificationPublisher.taskNotification(task, "SLA_BREACHED", null);
     }
 
     @Transactional
@@ -74,6 +79,7 @@ public class TaskSlaProcessor {
                 properties.getKafka().getTopicSlaEvents(), null, task.getProcessInstance().getBusinessKey(),
                 Map.of("taskInstanceId", task.getId(), "afterPercent", rule.afterPercent(),
                         "escalateToRole", rule.escalateToRole()));
+        notificationPublisher.taskNotification(task, "SLA_ESCALATED", null);
     }
 
     private TaskInstance getTask(UUID taskId) {

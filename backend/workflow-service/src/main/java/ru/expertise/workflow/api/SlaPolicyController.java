@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import ru.expertise.workflow.api.dto.ProcessEventLogDtos;
 import ru.expertise.workflow.api.dto.SlaPolicyDtos;
 import ru.expertise.workflow.domain.SlaPolicy;
 import ru.expertise.workflow.sla.SlaPolicyService;
@@ -48,6 +49,16 @@ public class SlaPolicyController {
     @PreAuthorize("isAuthenticated()")
     public SlaPolicyDtos.Response get(@PathVariable UUID id) {
         return toResponse(service.get(id));
+    }
+
+    /** Configuration journal of the policy (TZ §10). */
+    @GetMapping("/{id}/journal")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ANALYST')")
+    public List<ProcessEventLogDtos.Response> journal(@PathVariable UUID id) {
+        return service.getJournal(id).stream()
+                .map(log -> new ProcessEventLogDtos.Response(log.getId(), null, null, log.getEventType(),
+                        log.getPayload(), log.getCorrelationId(), log.getActorId(), log.getOccurredAt()))
+                .toList();
     }
 
     @GetMapping

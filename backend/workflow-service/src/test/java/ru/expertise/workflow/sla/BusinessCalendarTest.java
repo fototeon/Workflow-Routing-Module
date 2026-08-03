@@ -51,4 +51,16 @@ class BusinessCalendarTest {
         Instant result = calendar.addBusinessMinutes(start, 30);
         assertThat(result).isEqualTo(at(2026, 8, 3, 9, 30));
     }
+
+    @Test
+    void skipsConfiguredHolidays() {
+        BusinessCalendar withHolidays = new BusinessCalendar(ZoneId.of("UTC"),
+                java.util.List.of(java.time.LocalDate.of(2026, 1, 1), java.time.LocalDate.of(2026, 1, 2)));
+
+        // 31 Dec 2026-... is a Thursday 17:00; one working hour left, then two holidays and a weekend.
+        Instant start = ZonedDateTime.of(2025, 12, 31, 17, 0, 0, 0, ZoneId.of("UTC")).toInstant();
+        Instant due = withHolidays.addBusinessMinutes(start, 120);
+
+        assertThat(due.atZone(ZoneId.of("UTC")).toLocalDate()).isEqualTo(java.time.LocalDate.of(2026, 1, 5));
+    }
 }

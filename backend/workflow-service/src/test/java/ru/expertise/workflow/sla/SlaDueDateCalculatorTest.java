@@ -11,7 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class SlaDueDateCalculatorTest {
 
-    private final SlaDueDateCalculator calculator = new SlaDueDateCalculator("UTC");
+    private final SlaDueDateCalculator calculator =
+            new SlaDueDateCalculator("UTC", new ru.expertise.workflow.config.WorkflowProperties());
 
     private Instant at(int year, int month, int day, int hour, int minute) {
         return ZonedDateTime.of(year, month, day, hour, minute, 0, 0, ZoneId.of("UTC")).toInstant();

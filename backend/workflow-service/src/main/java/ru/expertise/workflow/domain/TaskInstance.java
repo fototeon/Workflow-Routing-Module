@@ -52,6 +52,10 @@ public class TaskInstance extends BaseAuditableEntity {
     @Column(name = "last_escalated_percent", nullable = false)
     private int lastEscalatedPercent = 0;
 
+    /** Set while the owning process is suspended: the SLA clock does not run and the deadline shifts on resume. */
+    @Column(name = "sla_paused_at")
+    private Instant slaPausedAt;
+
     @Version
     private int version;
 
@@ -129,6 +133,14 @@ public class TaskInstance extends BaseAuditableEntity {
 
     public void setLastEscalatedPercent(int lastEscalatedPercent) {
         this.lastEscalatedPercent = lastEscalatedPercent;
+    }
+
+    public Instant getSlaPausedAt() {
+        return slaPausedAt;
+    }
+
+    public void setSlaPausedAt(Instant slaPausedAt) {
+        this.slaPausedAt = slaPausedAt;
     }
 
     public int getVersion() {

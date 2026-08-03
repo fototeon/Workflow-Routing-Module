@@ -18,6 +18,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * Polls the transactional outbox and publishes pending rows to Kafka. Rows that keep failing past
  * {@code workflow.outbox.max-attempts} are routed to the DLQ topic instead of retried forever.
+ * Each pass claims its batch with a row lock and {@code SKIP LOCKED}, so running several replicas
+ * does not publish the same event twice (TZ §11).
  */
 @Component
 public class OutboxPublisher {
@@ -41,7 +43,7 @@ public class OutboxPublisher {
     @Scheduled(fixedDelayString = "${workflow.outbox.poll-interval-ms:2000}")
     @Transactional
     public void publishPending() {
-        List<OutboxEvent> pending = outboxEventRepository.findByPublishedAtIsNullOrderByCreatedAtAsc(
+        List<OutboxEvent> pending = outboxEventRepository.lockUnpublished(
                 PageRequest.of(0, properties.getOutbox().getBatchSize()));
 
         for (OutboxEvent event : pending) {

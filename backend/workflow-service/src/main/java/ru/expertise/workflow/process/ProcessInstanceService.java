@@ -24,6 +24,9 @@ import ru.expertise.workflow.repository.ProcessInstanceRepository;
 import ru.expertise.workflow.routing.NoRouteMatchedException;
 import ru.expertise.workflow.routing.RoutingDecision;
 import ru.expertise.workflow.routing.RoutingEngine;
+import ru.expertise.workflow.repository.TaskInstanceRepository;
+import ru.expertise.workflow.security.AccessPolicy;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.time.Instant;
 import java.util.List;
@@ -47,6 +50,8 @@ public class ProcessInstanceService {
     private final TaskInstanceService taskInstanceService;
     private final OutboxEventWriter outboxEventWriter;
     private final WorkflowProperties properties;
+    private final TaskInstanceRepository taskInstanceRepository;
+    private final AccessPolicy accessPolicy;
     private final ProcessInstanceService self;
 
     public ProcessInstanceService(ProcessDefinitionRepository processDefinitionRepository,
@@ -56,6 +61,8 @@ public class ProcessInstanceService {
                                    TaskInstanceService taskInstanceService,
                                    OutboxEventWriter outboxEventWriter,
                                    WorkflowProperties properties,
+                                   TaskInstanceRepository taskInstanceRepository,
+                                   AccessPolicy accessPolicy,
                                    @Lazy ProcessInstanceService self) {
         this.processDefinitionRepository = processDefinitionRepository;
         this.processInstanceRepository = processInstanceRepository;
@@ -64,6 +71,8 @@ public class ProcessInstanceService {
         this.taskInstanceService = taskInstanceService;
         this.outboxEventWriter = outboxEventWriter;
         this.properties = properties;
+        this.taskInstanceRepository = taskInstanceRepository;
+        this.accessPolicy = accessPolicy;
         this.self = self;
     }
 
@@ -106,6 +115,10 @@ public class ProcessInstanceService {
         instance.setStatus(ProcessInstanceStatus.RUNNING);
         instance.setStartedAt(Instant.now());
         instance.setParentInstance(parent);
+        // Ownership attributes feed the access model (TZ §10); they come from the starting payload
+        // because the organization/user directory itself lives outside this module (TZ §2).
+        instance.setOwnerOrgId(attributeAsString(attributes, "organizationId", "organization"));
+        instance.setOwnerUserId(attributeAsString(attributes, "ownerUserId", "applicantId"));
         instance = processInstanceRepository.save(instance);
 
         RoutingDecision decision = routingEngine.resolve(definition.getId(), attributes);
@@ -160,6 +173,11 @@ public class ProcessInstanceService {
         }
         instance = processInstanceRepository.save(instance);
 
+        if (target == ProcessInstanceStatus.CANCELLED) {
+            // A cancelled process must not leave actionable tasks behind (TZ §5).
+            taskInstanceService.cancelOpenTasks(instance.getId(), reason, actorId);
+        }
+
         AuditContext.processInstanceId(instance.getId());
         AuditContext.detail("from", previous.name());
         AuditContext.detail("to", target.name());
@@ -177,15 +195,115 @@ public class ProcessInstanceService {
         return self.transitionStatus(instanceId, ProcessInstanceStatus.CANCELLED, reason, actorId);
     }
 
+    /**
+     * Suspends the process and stops the SLA clock of its open tasks (TZ §2 "паузы"): the deadlines
+     * are moved forward by the length of the pause when it resumes, so waiting on an external party
+     * does not consume the SLA window.
+     */
+    @Transactional
+    @Audited(DomainEventType.PROCESS_SUSPENDED)
+    public ProcessInstance suspend(UUID instanceId, String reason, String actorId) {
+        ProcessInstance instance = get(instanceId);
+        if (!instance.getStatus().canTransitionTo(ProcessInstanceStatus.SUSPENDED)) {
+            throw new InvalidStatusTransitionException(instance.getStatus().name(), ProcessInstanceStatus.SUSPENDED.name());
+        }
+        Instant now = Instant.now();
+        ProcessInstanceStatus previous = instance.getStatus();
+        instance.setStatus(ProcessInstanceStatus.SUSPENDED);
+        instance.setSuspendedAt(now);
+        instance = processInstanceRepository.save(instance);
+
+        taskInstanceService.pauseSla(instance.getId(), now);
+
+        AuditContext.processInstanceId(instance.getId());
+        AuditContext.detail("from", previous.name());
+        AuditContext.detail("reason", reason);
+        AuditContext.detail("actorId", actorId);
+
+        outboxEventWriter.enqueue("ProcessInstance", instance.getId().toString(), DomainEventType.PROCESS_SUSPENDED,
+                properties.getKafka().getTopicProcessEvents(), null, instance.getBusinessKey(),
+                Map.of("processInstanceId", instance.getId(), "from", previous.name(), "reason", reason));
+
+        return instance;
+    }
+
+    /** Resumes a suspended process and shifts its task deadlines by the length of the pause. */
+    @Transactional
+    @Audited(DomainEventType.PROCESS_RESUMED)
+    public ProcessInstance resume(UUID instanceId, String actorId) {
+        ProcessInstance instance = get(instanceId);
+        if (instance.getStatus() != ProcessInstanceStatus.SUSPENDED) {
+            throw new InvalidStatusTransitionException(instance.getStatus().name(), ProcessInstanceStatus.RUNNING.name());
+        }
+        Instant now = Instant.now();
+        instance.setStatus(ProcessInstanceStatus.RUNNING);
+        instance.setSuspendedAt(null);
+        instance = processInstanceRepository.save(instance);
+
+        taskInstanceService.resumeSla(instance.getId(), now);
+
+        AuditContext.processInstanceId(instance.getId());
+        AuditContext.detail("to", ProcessInstanceStatus.RUNNING.name());
+        AuditContext.detail("actorId", actorId);
+
+        outboxEventWriter.enqueue("ProcessInstance", instance.getId().toString(), DomainEventType.PROCESS_RESUMED,
+                properties.getKafka().getTopicProcessEvents(), null, instance.getBusinessKey(),
+                Map.of("processInstanceId", instance.getId(), "to", ProcessInstanceStatus.RUNNING.name()));
+
+        return instance;
+    }
+
+    private static String attributeAsString(Map<String, Object> attributes, String... keys) {
+        if (attributes == null) {
+            return null;
+        }
+        for (String key : keys) {
+            Object value = attributes.get(key);
+            if (value != null && !String.valueOf(value).isBlank()) {
+                return String.valueOf(value);
+            }
+        }
+        return null;
+    }
+
     @Transactional(readOnly = true)
     public ProcessInstance get(UUID instanceId) {
         return processInstanceRepository.findById(instanceId)
                 .orElseThrow(() -> new EntityNotFoundException("ProcessInstance " + instanceId + " not found"));
     }
 
+    /** Loads an instance only if the access model lets the current user see it (TZ §10). */
+    @Transactional(readOnly = true)
+    public ProcessInstance getForCurrentUser(UUID instanceId) {
+        ProcessInstance instance = get(instanceId);
+        if (!accessPolicy.canSee(instance, taskInstanceRepository.findByProcessInstanceId(instanceId))) {
+            throw new AccessDeniedException("Process instance " + instanceId + " is not visible for the current user");
+        }
+        return instance;
+    }
+
     @Transactional(readOnly = true)
     public Page<ProcessInstance> search(Specification<ProcessInstance> spec, Pageable pageable) {
-        return processInstanceRepository.findAll(spec, pageable);
+        return processInstanceRepository.findAll(spec.and(accessPolicy.visibleInstances()), pageable);
+    }
+
+    /**
+     * Rows for the CSV export (TZ §9), flattened inside the transaction — the controller would
+     * otherwise dereference lazy associations on detached entities.
+     */
+    @Transactional(readOnly = true)
+    public List<List<String>> exportRows(Specification<ProcessInstance> spec) {
+        return processInstanceRepository.findAll(spec.and(accessPolicy.visibleInstances())).stream()
+                .map(instance -> List.of(
+                        instance.getBusinessKey(),
+                        instance.getProcessDefinition().getCode(),
+                        String.valueOf(instance.getProcessVersion()),
+                        instance.getStatus().name(),
+                        instance.getCurrentStepCode() == null ? "" : instance.getCurrentStepCode(),
+                        instance.getStartedAt() == null ? "" : instance.getStartedAt().toString(),
+                        instance.getCompletedAt() == null ? "" : instance.getCompletedAt().toString(),
+                        instance.getCreatedBy() == null ? "" : instance.getCreatedBy()))
+                .toList();
     }
 
     @Transactional(readOnly = true)

@@ -52,14 +52,33 @@ workflow:
     topic-sla-events: workflow.sla.events
     topic-dlq: workflow.events.dlq
     topic-request-accepted: request.request-accepted
+    topic-definition-events: workflow.definition.events
+    topic-notifications: workflow.notifications
   outbox:
     poll-interval-ms: 2000
     batch-size: 50
     max-attempts: 5
   sla:
     scan-interval-ms: 30000
+    # Non-working days on top of weekends; extend per production calendar.
+    holidays:
+      - 2026-01-01
+      - 2026-01-02
+      - 2026-01-07
+      - 2026-03-09
+      - 2026-05-01
+      - 2026-05-11
+      - 2026-06-12
+      - 2026-11-04
+  access:
+    # Management and reporting roles see every case; everyone else only what they are involved in.
+    full-access-roles: [ADMIN, MANAGER, ANALYST]
+    organization-claim: organization
 
 management:
+  tracing:
+    sampling:
+      probability: 1.0
   endpoints:
     web:
       exposure:

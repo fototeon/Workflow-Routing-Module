@@ -17,7 +17,8 @@ import java.util.UUID;
 
 /**
  * Append-only process journal (TZ-02-WORKFLOW section 4/5/10): every domain event and audit-relevant
- * action is recorded here, keyed by process instance and optionally by task instance.
+ * action is recorded here, keyed by process instance and optionally by task instance. Configuration
+ * changes (templates, routing rules, SLA policies) have no instance and are keyed by subject.
  */
 @Entity
 @Table(name = "process_event_log")
@@ -41,6 +42,13 @@ public class ProcessEventLog {
     @Type(JsonType.class)
     @Column(columnDefinition = "jsonb", nullable = false)
     private JsonNode payload;
+
+    /** Configuration changes have no instance to hang off, so they are addressed by subject instead. */
+    @Column(name = "subject_type")
+    private String subjectType;
+
+    @Column(name = "subject_id")
+    private String subjectId;
 
     @Column(name = "correlation_id")
     private String correlationId;
@@ -85,6 +93,22 @@ public class ProcessEventLog {
 
     public void setPayload(JsonNode payload) {
         this.payload = payload;
+    }
+
+    public String getSubjectType() {
+        return subjectType;
+    }
+
+    public void setSubjectType(String subjectType) {
+        this.subjectType = subjectType;
+    }
+
+    public String getSubjectId() {
+        return subjectId;
+    }
+
+    public void setSubjectId(String subjectId) {
+        this.subjectId = subjectId;
     }
 
     public String getCorrelationId() {

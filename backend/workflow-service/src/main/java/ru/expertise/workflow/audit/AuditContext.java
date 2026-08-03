@@ -23,6 +23,12 @@ public final class AuditContext {
         entry().taskInstanceId = id;
     }
 
+    /** Addresses a journal entry that has no process/task behind it — a template, rule or SLA policy. */
+    public static void subject(String type, Object id) {
+        entry().subjectType = type;
+        entry().subjectId = String.valueOf(id);
+    }
+
     public static void correlationId(String id) {
         entry().correlationId = id;
     }
@@ -53,6 +59,8 @@ public final class AuditContext {
     public static final class Entry {
         private UUID processInstanceId;
         private UUID taskInstanceId;
+        private String subjectType;
+        private String subjectId;
         private String correlationId;
         private final Map<String, Object> details = new HashMap<>();
 
@@ -62,6 +70,14 @@ public final class AuditContext {
 
         public UUID getTaskInstanceId() {
             return taskInstanceId;
+        }
+
+        public String getSubjectType() {
+            return subjectType;
+        }
+
+        public String getSubjectId() {
+            return subjectId;
         }
 
         public String getCorrelationId() {

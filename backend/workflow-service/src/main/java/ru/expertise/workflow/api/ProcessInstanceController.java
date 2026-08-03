@@ -19,6 +19,7 @@ import ru.expertise.workflow.domain.ProcessEventLog;
 import ru.expertise.workflow.domain.ProcessInstance;
 import ru.expertise.workflow.domain.ProcessInstanceStatus;
 import ru.expertise.workflow.process.ProcessInstanceService;
+import ru.expertise.workflow.process.ExportRows;
 import ru.expertise.workflow.process.ProcessInstanceSpecifications;
 import ru.expertise.workflow.security.CurrentActorResolver;
 
@@ -55,6 +56,18 @@ public class ProcessInstanceController {
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(instance));
     }
 
+    @PostMapping("/{id}/suspend")
+    @PreAuthorize("hasAnyRole('COORDINATOR', 'MANAGER', 'ADMIN')")
+    public ProcessInstanceDtos.Response suspend(@PathVariable UUID id, @Valid @RequestBody ProcessInstanceDtos.TransitionRequest request) {
+        return toResponse(service.suspend(id, request.reason(), currentActorResolver.currentActor()));
+    }
+
+    @PostMapping("/{id}/resume")
+    @PreAuthorize("hasAnyRole('COORDINATOR', 'MANAGER', 'ADMIN')")
+    public ProcessInstanceDtos.Response resume(@PathVariable UUID id) {
+        return toResponse(service.resume(id, currentActorResolver.currentActor()));
+    }
+
     @PostMapping("/{id}/cancel")
     @PreAuthorize("hasAnyRole('COORDINATOR', 'MANAGER', 'ADMIN')")
     public ProcessInstanceDtos.Response cancel(@PathVariable UUID id, @Valid @RequestBody ProcessInstanceDtos.TransitionRequest request) {
@@ -64,7 +77,7 @@ public class ProcessInstanceController {
     @GetMapping("/{id}")
     @PreAuthorize("isAuthenticated()")
     public ProcessInstanceDtos.Response get(@PathVariable UUID id) {
-        return toResponse(service.get(id));
+        return toResponse(service.getForCurrentUser(id));
     }
 
     @GetMapping
@@ -81,7 +94,21 @@ public class ProcessInstanceController {
     @GetMapping("/{id}/events")
     @PreAuthorize("isAuthenticated()")
     public List<ProcessEventLogDtos.Response> getEventLog(@PathVariable UUID id) {
+        service.getForCurrentUser(id);
         return service.getEventLog(id).stream().map(ProcessInstanceController::toResponse).toList();
+    }
+
+    /** CSV export of the current filter, for roles that are allowed to take data out (TZ §9). */
+    @GetMapping(value = "/export", produces = "text/csv; charset=UTF-8")
+    @PreAuthorize("hasAnyRole('ANALYST', 'MANAGER', 'ADMIN')")
+    public ResponseEntity<String> export(@RequestParam(required = false) ProcessInstanceStatus status,
+                                          @RequestParam(required = false) String businessKey,
+                                          @RequestParam(required = false) String processDefinitionCode) {
+        String csv = CsvWriter.render(ExportRows.PROCESS_HEADER,
+                service.exportRows(ProcessInstanceSpecifications.filter(status, businessKey, processDefinitionCode)));
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"process-instances.csv\"")
+                .body(csv);
     }
 
     private static ProcessInstanceDtos.Response toResponse(ProcessInstance instance) {
