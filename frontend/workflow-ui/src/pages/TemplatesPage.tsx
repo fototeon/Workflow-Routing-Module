@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   Box,
   Button,
+  Divider,
   Grid,
   IconButton,
   List,
@@ -23,14 +24,23 @@ import {
   archiveProcessDefinition,
   createProcessDefinition,
   deleteRoutingRule,
+  getProcessDefinitionJournal,
   listProcessDefinitionVersions,
   listRoutingRules,
   publishProcessDefinition,
 } from '../api/processDefinitions';
 import { listSlaPolicies } from '../api/slaPolicies';
-import type { ConditionNode, LeafCondition, ProcessDefinition, RoutingRule, SlaPolicy } from '../api/types';
+import type {
+  ConditionNode,
+  LeafCondition,
+  ProcessDefinition,
+  ProcessEventLogEntry,
+  RoutingRule,
+  SlaPolicy,
+} from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { DEFINITION_STATUS_LABELS } from '../statusLabels';
+import { colors } from '../colors';
 
 interface LeafDraft {
   field: string;
@@ -70,6 +80,7 @@ export function TemplatesPage() {
   const [searchCode, setSearchCode] = useState('');
   const [selected, setSelected] = useState<ProcessDefinition | null>(null);
   const [rules, setRules] = useState<RoutingRule[]>([]);
+  const [journal, setJournal] = useState<ProcessEventLogEntry[]>([]);
 
   const [newCode, setNewCode] = useState('');
   const [newName, setNewName] = useState('');
@@ -100,6 +111,8 @@ export function TemplatesPage() {
   const selectDefinition = (def: ProcessDefinition) => {
     setSelected(def);
     loadRules(def.id);
+    // Configuration journal of the template (TZ §10, REQ-02-002).
+    getProcessDefinitionJournal(def.id).then(setJournal).catch(() => setJournal([]));
   };
 
   return (
@@ -384,6 +397,41 @@ export function TemplatesPage() {
                   </Stack>
                 </Box>
               )}
+
+              <Divider sx={{ my: 3, borderColor: colors.glass.panelStroke }} />
+              <Typography variant="subtitle1" sx={{ color: colors.text.heading, mb: 1 }}>
+                Журнал изменений шаблона
+              </Typography>
+              <List dense>
+                {journal.map((entry) => (
+                  <ListItem key={entry.id} disableGutters>
+                    <ListItemText
+                      primary={
+                        <Typography variant="body2" sx={{ color: colors.text.body }}>
+                          {entry.eventType}
+                          {entry.actorId ? ` — ${entry.actorId}` : ''}
+                        </Typography>
+                      }
+                      secondary={
+                        <Typography variant="caption" sx={{ color: colors.text.caption }}>
+                          {new Date(entry.occurredAt).toLocaleString('ru-RU')}
+                        </Typography>
+                      }
+                    />
+                  </ListItem>
+                ))}
+                {journal.length === 0 && (
+                  <ListItem disableGutters>
+                    <ListItemText
+                      primary={
+                        <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+                          Записей пока нет.
+                        </Typography>
+                      }
+                    />
+                  </ListItem>
+                )}
+              </List>
             </Paper>
           )}
         </Grid>

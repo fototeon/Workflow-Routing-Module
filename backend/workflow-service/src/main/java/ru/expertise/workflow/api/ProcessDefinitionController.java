@@ -14,8 +14,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.expertise.workflow.api.dto.ProcessDefinitionDtos;
+import ru.expertise.workflow.api.dto.ProcessEventLogDtos;
 import ru.expertise.workflow.api.dto.RoutingRuleDtos;
 import ru.expertise.workflow.domain.ProcessDefinition;
+import ru.expertise.workflow.domain.ProcessEventLog;
 import ru.expertise.workflow.domain.RoutingRule;
 import ru.expertise.workflow.process.ProcessDefinitionService;
 
@@ -81,6 +83,13 @@ public class ProcessDefinitionController {
         return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(rule));
     }
 
+    /** Configuration journal of the template (TZ §10, REQ-02-002 "фиксируется в журнале действий"). */
+    @GetMapping("/{id}/journal")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'ANALYST')")
+    public List<ProcessEventLogDtos.Response> journal(@PathVariable UUID id) {
+        return service.getJournal(id).stream().map(ProcessDefinitionController::toResponse).toList();
+    }
+
     @GetMapping("/{id}/routing-rules")
     @PreAuthorize("isAuthenticated()")
     public List<RoutingRuleDtos.Response> getRoutingRules(@PathVariable UUID id) {
@@ -100,6 +109,14 @@ public class ProcessDefinitionController {
                 definition.getStatus().name(),
                 definition.getSlaPolicy() == null ? null : definition.getSlaPolicy().getId(),
                 definition.getCreatedAt(), definition.getUpdatedAt());
+    }
+
+    private static ProcessEventLogDtos.Response toResponse(ProcessEventLog log) {
+        return new ProcessEventLogDtos.Response(
+                log.getId(),
+                log.getProcessInstance() == null ? null : log.getProcessInstance().getId(),
+                log.getTaskInstance() == null ? null : log.getTaskInstance().getId(),
+                log.getEventType(), log.getPayload(), log.getCorrelationId(), log.getActorId(), log.getOccurredAt());
     }
 
     private static RoutingRuleDtos.Response toResponse(RoutingRule rule) {

@@ -37,6 +37,21 @@ export async function cancelProcessInstance(id: string, reason: string): Promise
   return data;
 }
 
+export async function suspendProcessInstance(id: string, reason: string): Promise<ProcessInstance> {
+  const { data } = await apiClient.post<ProcessInstance>(`/process-instances/${id}/suspend`, { reason });
+  return data;
+}
+
+export async function resumeProcessInstance(id: string): Promise<ProcessInstance> {
+  const { data } = await apiClient.post<ProcessInstance>(`/process-instances/${id}/resume`);
+  return data;
+}
+
+export async function startSubProcess(parentId: string, input: StartProcessInput): Promise<ProcessInstance> {
+  const { data } = await apiClient.post<ProcessInstance>(`/process-instances/${parentId}/sub-processes`, input);
+  return data;
+}
+
 export async function getProcessInstanceEvents(id: string): Promise<ProcessEventLogEntry[]> {
   const { data } = await apiClient.get<ProcessEventLogEntry[]>(`/process-instances/${id}/events`);
   return data;

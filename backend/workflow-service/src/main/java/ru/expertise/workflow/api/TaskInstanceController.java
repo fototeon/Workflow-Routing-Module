@@ -2,6 +2,7 @@ package ru.expertise.workflow.api;
 
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -16,9 +17,11 @@ import ru.expertise.workflow.domain.TaskInstance;
 import ru.expertise.workflow.domain.TaskInstanceStatus;
 import ru.expertise.workflow.process.ProcessInstanceService;
 import ru.expertise.workflow.process.TaskInstanceService;
+import ru.expertise.workflow.process.ExportRows;
 import ru.expertise.workflow.process.TaskInstanceSpecifications;
 import ru.expertise.workflow.security.CurrentActorResolver;
 
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -55,6 +58,20 @@ public class TaskInstanceController {
         var page = taskInstanceService.search(
                 TaskInstanceSpecifications.filter(status, assigneeId, assigneeRole, processInstanceId), pageable);
         return PageResponse.of(page, TaskInstanceController::toResponse);
+    }
+
+    /** CSV export of the current task filter (TZ §9). */
+    @GetMapping(value = "/export", produces = "text/csv; charset=UTF-8")
+    @PreAuthorize("hasAnyRole('ANALYST', 'MANAGER', 'ADMIN')")
+    public ResponseEntity<String> export(@RequestParam(required = false) TaskInstanceStatus status,
+                                          @RequestParam(required = false) String assigneeId,
+                                          @RequestParam(required = false) String assigneeRole,
+                                          @RequestParam(required = false) UUID processInstanceId) {
+        String csv = CsvWriter.render(ExportRows.TASK_HEADER, taskInstanceService.exportRows(
+                TaskInstanceSpecifications.filter(status, assigneeId, assigneeRole, processInstanceId)));
+        return ResponseEntity.ok()
+                .header("Content-Disposition", "attachment; filename=\"tasks.csv\"")
+                .body(csv);
     }
 
     @PostMapping("/{id}/complete")

@@ -3,11 +3,14 @@ package ru.expertise.workflow.sla;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Collection;
+import java.util.Set;
 
 /**
- * Demo-scale business calendar: Mon-Fri, 09:00-18:00, no public holidays. Used to spread SLA
+ * Business calendar: Mon-Fri, 09:00-18:00, minus the configured public holidays. Used to spread SLA
  * durations across working time only (REQ-02-005 "Контроль SLA с календарями").
  */
 public class BusinessCalendar {
@@ -16,9 +19,15 @@ public class BusinessCalendar {
     private static final int BUSINESS_END_HOUR = 18;
 
     private final ZoneId zone;
+    private final Set<LocalDate> holidays;
 
     public BusinessCalendar(ZoneId zone) {
+        this(zone, Set.of());
+    }
+
+    public BusinessCalendar(ZoneId zone, Collection<LocalDate> holidays) {
         this.zone = zone;
+        this.holidays = holidays == null ? Set.of() : Set.copyOf(holidays);
     }
 
     public Instant addBusinessMinutes(Instant start, long minutes) {
@@ -49,7 +58,7 @@ public class BusinessCalendar {
 
     private ZonedDateTime alignToBusinessMoment(ZonedDateTime moment) {
         ZonedDateTime aligned = moment;
-        if (isWeekend(aligned)) {
+        if (isNonWorkingDay(aligned)) {
             return nextBusinessDayStart(aligned.minusDays(1));
         }
         ZonedDateTime startOfDay = aligned.withHour(BUSINESS_START_HOUR).withMinute(0).withSecond(0).withNano(0);
@@ -65,13 +74,15 @@ public class BusinessCalendar {
 
     private ZonedDateTime nextBusinessDayStart(ZonedDateTime from) {
         ZonedDateTime next = from.plusDays(1).withHour(BUSINESS_START_HOUR).withMinute(0).withSecond(0).withNano(0);
-        while (isWeekend(next)) {
+        while (isNonWorkingDay(next)) {
             next = next.plusDays(1);
         }
         return next;
     }
 
-    private boolean isWeekend(ZonedDateTime dt) {
-        return dt.getDayOfWeek() == DayOfWeek.SATURDAY || dt.getDayOfWeek() == DayOfWeek.SUNDAY;
+    private boolean isNonWorkingDay(ZonedDateTime dt) {
+        return dt.getDayOfWeek() == DayOfWeek.SATURDAY
+                || dt.getDayOfWeek() == DayOfWeek.SUNDAY
+                || holidays.contains(dt.toLocalDate());
     }
 }

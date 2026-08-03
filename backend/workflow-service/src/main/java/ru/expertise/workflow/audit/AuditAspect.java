@@ -52,6 +52,8 @@ public class AuditAspect {
 
         ProcessEventLog log = new ProcessEventLog();
         log.setEventType(audited.value().wireName());
+        log.setSubjectType(ctx.getSubjectType());
+        log.setSubjectId(ctx.getSubjectId());
         log.setCorrelationId(ctx.getCorrelationId());
         log.setActorId(currentActorResolver.currentActor());
         log.setPayload(objectMapper.valueToTree(ctx.getDetails()));
@@ -63,10 +65,10 @@ public class AuditAspect {
             log.setTaskInstance(entityManager.getReference(TaskInstance.class, ctx.getTaskInstanceId()));
         }
 
-        if (log.getProcessInstance() == null && log.getTaskInstance() == null) {
+        if (log.getProcessInstance() == null && log.getTaskInstance() == null && log.getSubjectId() == null) {
             Method method = ((org.aspectj.lang.reflect.MethodSignature) joinPoint.getSignature()).getMethod();
-            throw new IllegalStateException(
-                    "@Audited method " + method + " completed without setting processInstanceId or taskInstanceId on AuditContext");
+            throw new IllegalStateException("@Audited method " + method
+                    + " completed without setting processInstanceId, taskInstanceId or subject on AuditContext");
         }
 
         processEventLogRepository.save(log);

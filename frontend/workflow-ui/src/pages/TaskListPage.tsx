@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   MenuItem,
   Paper,
+  Stack,
   Table,
   TableBody,
   TableCell,
@@ -15,10 +18,15 @@ import {
   TableHead,
   TablePagination,
   TableRow,
+  TableSortLabel,
   TextField,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { completeTask, reassignTask, searchTasks } from '../api/tasks';
+import { describeLoadError } from '../api/errors';
+import { downloadCsv } from '../api/analytics';
+import { SavedViews } from '../components/SavedViews';
+import DownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import type { TaskInstance, TaskInstanceStatus } from '../api/types';
 import { RoleGate } from '../auth/RoleGate';
 import { ROLES } from '../auth/authConfig';
@@ -39,22 +47,81 @@ export function TaskListPage() {
   const [reassignTo, setReassignTo] = useState('');
   const [reassignReason, setReassignReason] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ field: string; direction: 'asc' | 'desc' }>({ field: 'createdAt', direction: 'desc' });
+  const [selected, setSelected] = useState<string[]>([]);
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    // newest first, so a freshly created task is always at the top of the list
-    searchTasks({ page, size, status: status || undefined, sort: 'createdAt,desc' }).then((result) => {
-      if (cancelled) return;
-      setRows(result.content);
-      setTotalElements(result.totalElements);
-    });
+    setLoadError(null);
+    searchTasks({ page, size, status: status || undefined, sort: `${sort.field},${sort.direction}` })
+      .then((result) => {
+        if (cancelled) return;
+        setRows(result.content);
+        setTotalElements(result.totalElements);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setRows([]);
+        setTotalElements(0);
+        setLoadError(describeLoadError(error, 'задачи'));
+      });
     return () => {
       cancelled = true;
     };
-  }, [page, size, status, reloadKey]);
+  }, [page, size, status, reloadKey, sort]);
+
+  const selectableIds = rows.filter((row) => !['COMPLETED', 'CANCELLED'].includes(row.status)).map((row) => row.id);
 
   return (
     <Box>
+      {loadError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {loadError}
+        </Alert>
+      )}
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 2, flexWrap: 'wrap' }}>
+        <SavedViews
+          storageKey="workflow.views.tasks"
+          currentFilters={{ status }}
+          onApply={(filters) => {
+            setPage(0);
+            setStatus(filters.status);
+          }}
+        />
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <RoleGate allow={[ROLES.COORDINATOR, ROLES.MANAGER, ROLES.ADMIN]}>
+            <Button
+              disabled={selected.length === 0 || bulkBusy}
+              onClick={async () => {
+                setBulkBusy(true);
+                try {
+                  // Bulk action within the caller's rights (TZ §9): each task goes through the same
+                  // endpoint as the single-row action, so the server re-checks every one of them.
+                  for (const taskId of selected) {
+                    await completeTask(taskId);
+                  }
+                  setSelected([]);
+                  setReloadKey((k) => k + 1);
+                } finally {
+                  setBulkBusy(false);
+                }
+              }}
+            >
+              Выполнить выбранные ({selected.length})
+            </Button>
+          </RoleGate>
+          <RoleGate allow={[ROLES.ANALYST, ROLES.MANAGER, ROLES.ADMIN]}>
+            <Button
+              startIcon={<DownloadOutlinedIcon />}
+              onClick={() => downloadCsv('/tasks/export', { status: status || undefined }, 'tasks.csv')}
+            >
+              Выгрузить CSV
+            </Button>
+          </RoleGate>
+        </Stack>
+      </Stack>
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <TextField
           select
@@ -79,16 +146,54 @@ export function TaskListPage() {
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Шаг</TableCell>
-              <TableCell>Статус</TableCell>
-              <TableCell>Исполнитель</TableCell>
-              <TableCell>Срок</TableCell>
+              <TableCell padding="checkbox">
+                <Checkbox
+                  indeterminate={selected.length > 0 && selected.length < selectableIds.length}
+                  checked={selectableIds.length > 0 && selected.length === selectableIds.length}
+                  onChange={(e) => setSelected(e.target.checked ? selectableIds : [])}
+                  slotProps={{ input: { 'aria-label': 'Выбрать все задачи' } }}
+                />
+              </TableCell>
+              {[
+                { field: 'stepCode', label: 'Шаг' },
+                { field: 'status', label: 'Статус' },
+                { field: 'assigneeId', label: 'Исполнитель' },
+                { field: 'dueAt', label: 'Срок' },
+              ].map((column) => (
+                <TableCell key={column.field} sortDirection={sort.field === column.field ? sort.direction : false}>
+                  <TableSortLabel
+                    active={sort.field === column.field}
+                    direction={sort.field === column.field ? sort.direction : 'asc'}
+                    onClick={() =>
+                      setSort((current) =>
+                        current.field === column.field
+                          ? { field: column.field, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+                          : { field: column.field, direction: 'asc' },
+                      )
+                    }
+                  >
+                    {column.label}
+                  </TableSortLabel>
+                </TableCell>
+              ))}
               <TableCell align="right">Действия</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {rows.map((row) => (
-              <TableRow key={row.id} hover>
+              <TableRow key={row.id} hover selected={selected.includes(row.id)}>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    disabled={!selectableIds.includes(row.id)}
+                    checked={selected.includes(row.id)}
+                    onChange={(e) =>
+                      setSelected((current) =>
+                        e.target.checked ? [...current, row.id] : current.filter((id) => id !== row.id),
+                      )
+                    }
+                    slotProps={{ input: { 'aria-label': `Выбрать задачу ${row.name}` } }}
+                  />
+                </TableCell>
                 <TableCell sx={{ cursor: 'pointer', color: colors.text.body }} onClick={() => navigate(`/processes/${row.processInstanceId}`)}>
                   {row.name}
                 </TableCell>
@@ -123,7 +228,7 @@ export function TaskListPage() {
             ))}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={5} align="center" sx={{ color: colors.text.secondary }}>
+                <TableCell colSpan={6} align="center" sx={{ color: colors.text.secondary }}>
                   Задачи не найдены.
                 </TableCell>
               </TableRow>

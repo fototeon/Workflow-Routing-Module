@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -16,12 +17,17 @@ import {
   TableHead,
   TablePagination,
   TableRow,
+  TableSortLabel,
   TextField,
   Typography,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { listPublishedProcessDefinitions } from '../api/processDefinitions';
 import { searchProcessInstances, startProcessInstance } from '../api/processInstances';
+import { describeLoadError } from '../api/errors';
+import { downloadCsv } from '../api/analytics';
+import { SavedViews } from '../components/SavedViews';
+import DownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import type { ProcessDefinition, ProcessInstance, ProcessInstanceStatus } from '../api/types';
 import { RoleGate } from '../auth/RoleGate';
 import { ROLES } from '../auth/authConfig';
@@ -48,6 +54,8 @@ export function ProcessListPage() {
   const [status, setStatus] = useState<ProcessInstanceStatus | ''>('');
   const [businessKey, setBusinessKey] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [sort, setSort] = useState<{ field: string; direction: 'asc' | 'desc' }>({ field: 'createdAt', direction: 'desc' });
   const [reloadKey, setReloadKey] = useState(0);
 
   const [startOpen, setStartOpen] = useState(false);
@@ -66,18 +74,24 @@ export function ProcessListPage() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadError(null);
     searchProcessInstances({
       page,
       size,
       status: status || undefined,
       businessKey: businessKey || undefined,
-      // newest first, so a just-started process is always at the top of the register
-      sort: 'createdAt,desc',
+      sort: `${sort.field},${sort.direction}`,
     })
       .then((result) => {
         if (cancelled) return;
         setRows(result.content);
         setTotalElements(result.totalElements);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setRows([]);
+        setTotalElements(0);
+        setLoadError(describeLoadError(error, 'процессы'));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -85,16 +99,46 @@ export function ProcessListPage() {
     return () => {
       cancelled = true;
     };
-  }, [page, size, status, businessKey, reloadKey]);
+  }, [page, size, status, businessKey, reloadKey, sort]);
 
   return (
     <Box>
-      <Stack direction="row" sx={{ justifyContent: 'flex-end', alignItems: 'center', mb: 2 }}>
-        <RoleGate allow={[ROLES.COORDINATOR, ROLES.MANAGER, ROLES.ADMIN]}>
-          <Button variant="contained" onClick={() => setStartOpen(true)}>
-            Запустить процесс
-          </Button>
-        </RoleGate>
+      {loadError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {loadError}
+        </Alert>
+      )}
+      <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 2, flexWrap: 'wrap' }}>
+        <SavedViews
+          storageKey="workflow.views.processes"
+          currentFilters={{ status, businessKey }}
+          onApply={(filters) => {
+            setPage(0);
+            setStatus(filters.status);
+            setBusinessKey(filters.businessKey);
+          }}
+        />
+        <Stack direction="row" spacing={1}>
+          <RoleGate allow={[ROLES.ANALYST, ROLES.MANAGER, ROLES.ADMIN]}>
+            <Button
+              startIcon={<DownloadOutlinedIcon />}
+              onClick={() =>
+                downloadCsv(
+                  '/process-instances/export',
+                  { status: status || undefined, businessKey: businessKey || undefined },
+                  'process-instances.csv',
+                )
+              }
+            >
+              Выгрузить CSV
+            </Button>
+          </RoleGate>
+          <RoleGate allow={[ROLES.COORDINATOR, ROLES.MANAGER, ROLES.ADMIN]}>
+            <Button variant="contained" onClick={() => setStartOpen(true)}>
+              Запустить процесс
+            </Button>
+          </RoleGate>
+        </Stack>
       </Stack>
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
         <TextField
@@ -129,11 +173,29 @@ export function ProcessListPage() {
         <Table size="small">
           <TableHead>
             <TableRow>
-              <TableCell>Бизнес-ключ</TableCell>
-              <TableCell>Статус</TableCell>
-              <TableCell>Текущий шаг</TableCell>
-              <TableCell>Начат</TableCell>
-              <TableCell>Обновлён</TableCell>
+              {[
+                { field: 'businessKey', label: 'Бизнес-ключ' },
+                { field: 'status', label: 'Статус' },
+                { field: 'currentStepCode', label: 'Текущий шаг' },
+                { field: 'startedAt', label: 'Начат' },
+                { field: 'updatedAt', label: 'Обновлён' },
+              ].map((column) => (
+                <TableCell key={column.field} sortDirection={sort.field === column.field ? sort.direction : false}>
+                  <TableSortLabel
+                    active={sort.field === column.field}
+                    direction={sort.field === column.field ? sort.direction : 'asc'}
+                    onClick={() =>
+                      setSort((current) =>
+                        current.field === column.field
+                          ? { field: column.field, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+                          : { field: column.field, direction: 'asc' },
+                      )
+                    }
+                  >
+                    {column.label}
+                  </TableSortLabel>
+                </TableCell>
+              ))}
             </TableRow>
           </TableHead>
           <TableBody>

@@ -9,7 +9,9 @@ import ru.expertise.workflow.config.WorkflowProperties;
 import ru.expertise.workflow.domain.ProcessInstance;
 import ru.expertise.workflow.domain.TaskInstance;
 import ru.expertise.workflow.domain.TaskInstanceStatus;
+import ru.expertise.workflow.events.NotificationPublisher;
 import ru.expertise.workflow.events.OutboxEventWriter;
+import ru.expertise.workflow.security.AccessPolicy;
 import ru.expertise.workflow.repository.TaskInstanceRepository;
 import ru.expertise.workflow.repository.TaskReassignmentRepository;
 import ru.expertise.workflow.sla.SlaDueDateCalculator;
@@ -34,13 +36,18 @@ class TaskInstanceServiceTest {
     private SlaDueDateCalculator slaDueDateCalculator;
     @Mock
     private OutboxEventWriter outboxEventWriter;
+    @Mock
+    private NotificationPublisher notificationPublisher;
+    @Mock
+    private AccessPolicy accessPolicy;
 
     private TaskInstanceService service;
 
     @BeforeEach
     void setUp() {
         service = new TaskInstanceService(taskInstanceRepository, taskReassignmentRepository,
-                slaDueDateCalculator, outboxEventWriter, new WorkflowProperties());
+                slaDueDateCalculator, outboxEventWriter, notificationPublisher, accessPolicy,
+                new WorkflowProperties(), null);
         lenient().when(taskInstanceRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 

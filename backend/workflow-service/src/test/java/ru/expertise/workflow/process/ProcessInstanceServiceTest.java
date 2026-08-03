@@ -39,6 +39,10 @@ class ProcessInstanceServiceTest {
     private TaskInstanceService taskInstanceService;
     @Mock
     private OutboxEventWriter outboxEventWriter;
+    @Mock
+    private ru.expertise.workflow.repository.TaskInstanceRepository taskInstanceRepository;
+    @Mock
+    private ru.expertise.workflow.security.AccessPolicy accessPolicy;
 
     private ProcessInstanceService service;
 
@@ -46,7 +50,7 @@ class ProcessInstanceServiceTest {
     void setUp() {
         service = new ProcessInstanceService(processDefinitionRepository, processInstanceRepository,
                 processEventLogRepository, routingEngine, taskInstanceService, outboxEventWriter,
-                new WorkflowProperties(), null);
+                new WorkflowProperties(), taskInstanceRepository, accessPolicy, null);
     }
 
     private ProcessDefinition definitionWithStatus(ProcessDefinitionStatus status) throws Exception {
