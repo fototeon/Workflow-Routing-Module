@@ -262,7 +262,12 @@ export function ProcessDetailPage() {
               </MenuItem>
             )}
           </TextField>
-          <TextField label="Бизнес-ключ" value={subBusinessKey} onChange={(e) => setSubBusinessKey(e.target.value)} />
+          <TextField
+            label="Бизнес-ключ"
+            value={subBusinessKey}
+            onChange={(e) => setSubBusinessKey(e.target.value)}
+            helperText="Собственный идентификатор подпроцесса, например номер родительской заявки с суффиксом -SUB"
+          />
           <TextField
             label="Атрибуты (JSON)"
             multiline

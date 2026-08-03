@@ -259,6 +259,7 @@ export function ProcessListPage() {
             label="Бизнес-ключ"
             value={startBusinessKey}
             onChange={(e) => setStartBusinessKey(e.target.value)}
+            helperText="Номер заявки или дела во внешней системе — по нему процесс ищут в реестре и связывают с событиями. Например: REQ-2026-001"
           />
           <TextField
             label="Атрибуты (JSON)"
