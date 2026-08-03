@@ -8,6 +8,7 @@ import { ProcessDetailPage } from './pages/ProcessDetailPage';
 import { TaskListPage } from './pages/TaskListPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { SlaPoliciesPage } from './pages/SlaPoliciesPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
 
 function App() {
   return (
@@ -22,6 +23,14 @@ function App() {
             element={
               <RequireRole allow={[ROLES.COORDINATOR, ROLES.MANAGER, ROLES.ADMIN]}>
                 <TaskListPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <RequireRole allow={[ROLES.ANALYST, ROLES.MANAGER, ROLES.ADMIN]}>
+                <AnalyticsPage />
               </RequireRole>
             }
           />

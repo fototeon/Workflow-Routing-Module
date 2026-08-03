@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { ConditionNode, ProcessDefinition, RoutingRule } from './types';
+import type { ConditionNode, ProcessDefinition, ProcessEventLogEntry, RoutingRule } from './types';
 
 export interface ProcessDefinitionInput {
   code: string;
@@ -47,6 +47,11 @@ export async function publishProcessDefinition(id: string): Promise<ProcessDefin
 
 export async function archiveProcessDefinition(id: string): Promise<ProcessDefinition> {
   const { data } = await apiClient.post<ProcessDefinition>(`/process-definitions/${id}/archive`);
+  return data;
+}
+
+export async function getProcessDefinitionJournal(id: string): Promise<ProcessEventLogEntry[]> {
+  const { data } = await apiClient.get<ProcessEventLogEntry[]>(`/process-definitions/${id}/journal`);
   return data;
 }
 

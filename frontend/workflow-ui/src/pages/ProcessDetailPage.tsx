@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
+  Alert,
   Box,
   Button,
   Dialog,
@@ -18,8 +19,18 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { cancelProcessInstance, getProcessInstance, getProcessInstanceEvents } from '../api/processInstances';
-import type { ProcessEventLogEntry, ProcessInstance, ProcessInstanceStatus } from '../api/types';
+import {
+  cancelProcessInstance,
+  getProcessInstance,
+  getProcessInstanceEvents,
+  resumeProcessInstance,
+  startSubProcess,
+  suspendProcessInstance,
+} from '../api/processInstances';
+import { listPublishedProcessDefinitions, listRoutingRules } from '../api/processDefinitions';
+import type { ProcessDefinition, ProcessEventLogEntry, ProcessInstance, ProcessInstanceStatus, RoutingRule } from '../api/types';
+import { ProcessMap } from '../components/ProcessMap';
+import { MenuItem } from '@mui/material';
 import { RoleGate } from '../auth/RoleGate';
 import { ROLES } from '../auth/authConfig';
 import { StatusChip } from '../components/StatusChip';
@@ -42,10 +53,23 @@ export function ProcessDetailPage() {
   const [events, setEvents] = useState<ProcessEventLogEntry[]>([]);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
+  const [suspendOpen, setSuspendOpen] = useState(false);
+  const [suspendReason, setSuspendReason] = useState('');
+  const [rules, setRules] = useState<RoutingRule[]>([]);
+  const [subOpen, setSubOpen] = useState(false);
+  const [subDefinitions, setSubDefinitions] = useState<ProcessDefinition[]>([]);
+  const [subDefinitionId, setSubDefinitionId] = useState('');
+  const [subBusinessKey, setSubBusinessKey] = useState('');
+  const [subAttributes, setSubAttributes] = useState('{}');
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     if (!id) return;
-    getProcessInstance(id).then(setInstance);
+    getProcessInstance(id).then((loaded) => {
+      setInstance(loaded);
+      // Route map comes from the template the instance runs on (REQ-02-008).
+      listRoutingRules(loaded.processDefinitionId).then(setRules).catch(() => setRules([]));
+    });
     getProcessInstanceEvents(id).then(setEvents);
   }, [id]);
 
@@ -58,6 +82,8 @@ export function ProcessDetailPage() {
   }
 
   const canCancel = !['COMPLETED', 'CANCELLED'].includes(instance.status);
+  const canSuspend = instance.status === 'RUNNING';
+  const canResume = instance.status === 'SUSPENDED';
 
   return (
     <Box>
@@ -82,6 +108,40 @@ export function ProcessDetailPage() {
           </Button>
         )}
         <RoleGate allow={[ROLES.COORDINATOR, ROLES.MANAGER, ROLES.ADMIN]}>
+          {canSuspend && (
+            <Button size="small" variant="outlined" onClick={() => setSuspendOpen(true)}>
+              Приостановить
+            </Button>
+          )}
+          {canResume && (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={async () => {
+                setActionError(null);
+                try {
+                  await resumeProcessInstance(instance.id);
+                  load();
+                } catch {
+                  setActionError('Не удалось возобновить процесс.');
+                }
+              }}
+            >
+              Возобновить
+            </Button>
+          )}
+          {canCancel && (
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => {
+                setSubOpen(true);
+                listPublishedProcessDefinitions().then(setSubDefinitions).catch(() => setSubDefinitions([]));
+              }}
+            >
+              Запустить подпроцесс
+            </Button>
+          )}
           {canCancel && (
             <Button size="small" color="error" variant="outlined" onClick={() => setCancelOpen(true)}>
               Отменить процесс
@@ -89,6 +149,12 @@ export function ProcessDetailPage() {
           )}
         </RoleGate>
       </Box>
+
+      {actionError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {actionError}
+        </Alert>
+      )}
 
       {instance.status !== 'CANCELLED' ? (
         <Stepper activeStep={stepIndex(instance.status)} sx={{ mb: 4 }}>
@@ -101,6 +167,8 @@ export function ProcessDetailPage() {
       ) : (
         <Typography sx={{ mb: 4, color: '#F87171' }}>Этот процесс был отменён.</Typography>
       )}
+
+      <ProcessMap rules={rules} currentStepCode={instance.currentStepCode} />
 
       <Typography variant="h6" gutterBottom sx={{ color: colors.text.heading }}>
         История событий
@@ -134,6 +202,107 @@ export function ProcessDetailPage() {
           )}
         </List>
       </Paper>
+
+      <Dialog open={suspendOpen} onClose={() => setSuspendOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Приостановить процесс</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: colors.text.secondary, mb: 1 }}>
+            На время паузы срок SLA по задачам не течёт и сдвигается при возобновлении.
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={2}
+            label="Причина"
+            value={suspendReason}
+            onChange={(e) => setSuspendReason(e.target.value)}
+            sx={{ mt: 1 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSuspendOpen(false)}>Отмена</Button>
+          <Button
+            variant="contained"
+            disabled={!suspendReason.trim()}
+            onClick={async () => {
+              setActionError(null);
+              try {
+                await suspendProcessInstance(instance.id, suspendReason);
+                setSuspendOpen(false);
+                setSuspendReason('');
+                load();
+              } catch {
+                setActionError('Не удалось приостановить процесс.');
+              }
+            }}
+          >
+            Приостановить
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={subOpen} onClose={() => setSubOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Запустить подпроцесс</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <TextField
+            select
+            label="Шаблон подпроцесса"
+            value={subDefinitionId}
+            onChange={(e) => setSubDefinitionId(e.target.value)}
+          >
+            {subDefinitions.map((definition) => (
+              <MenuItem key={definition.id} value={definition.id}>
+                {definition.code} v{definition.version}
+              </MenuItem>
+            ))}
+            {subDefinitions.length === 0 && (
+              <MenuItem disabled value="">
+                Нет опубликованных шаблонов
+              </MenuItem>
+            )}
+          </TextField>
+          <TextField label="Бизнес-ключ" value={subBusinessKey} onChange={(e) => setSubBusinessKey(e.target.value)} />
+          <TextField
+            label="Атрибуты (JSON)"
+            multiline
+            minRows={3}
+            value={subAttributes}
+            onChange={(e) => setSubAttributes(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSubOpen(false)}>Закрыть</Button>
+          <Button
+            variant="contained"
+            disabled={!subDefinitionId || !subBusinessKey.trim()}
+            onClick={async () => {
+              setActionError(null);
+              let attributes: Record<string, unknown>;
+              try {
+                attributes = JSON.parse(subAttributes);
+              } catch {
+                setActionError('Атрибуты должны быть корректным JSON.');
+                return;
+              }
+              try {
+                const created = await startSubProcess(instance.id, {
+                  processDefinitionId: subDefinitionId,
+                  businessKey: subBusinessKey,
+                  attributes,
+                });
+                setSubOpen(false);
+                setSubBusinessKey('');
+                navigate(`/processes/${created.id}`);
+              } catch {
+                setActionError('Не удалось запустить подпроцесс.');
+              }
+            }}
+          >
+            Запустить
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={cancelOpen} onClose={() => setCancelOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Отменить процесс</DialogTitle>

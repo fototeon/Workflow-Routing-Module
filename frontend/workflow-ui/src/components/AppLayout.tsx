@@ -18,6 +18,7 @@ import { useAuth } from '../auth/authContext';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurnedInOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
+import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
 import ScheduleOutlinedIcon from '@mui/icons-material/ScheduleOutlined';
 import HelpOutlineIcon from '@mui/icons-material/HelpOutlineOutlined';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -30,11 +31,13 @@ const DRAWER_WIDTH = 260;
 const NAV_ITEMS = [
   { path: '/processes', label: 'Процессы', icon: DescriptionOutlinedIcon, allow: [ROLES.COORDINATOR, ROLES.MANAGER, ROLES.ADMIN, ROLES.ANALYST] },
   { path: '/tasks', label: 'Задачи', icon: AssignmentTurnedInOutlinedIcon, allow: [ROLES.COORDINATOR, ROLES.MANAGER, ROLES.ADMIN] },
+  { path: '/analytics', label: 'Аналитика', icon: InsightsOutlinedIcon, allow: [ROLES.ANALYST, ROLES.MANAGER, ROLES.ADMIN] },
   { path: '/templates', label: 'Шаблоны процессов', icon: AccountTreeOutlinedIcon, allow: [ROLES.ADMIN] },
   { path: '/sla-policies', label: 'SLA политики', icon: ScheduleOutlinedIcon, allow: [ROLES.ADMIN] },
 ];
 
 const PAGE_TITLES: Record<string, string> = {
+  '/analytics': 'Аналитика',
   '/processes': 'Реестр процессов',
   '/tasks': 'Реестр задач',
   '/templates': 'Шаблоны процессов',

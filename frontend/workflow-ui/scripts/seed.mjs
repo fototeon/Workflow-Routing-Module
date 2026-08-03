@@ -154,7 +154,7 @@ const REQUESTS = [
   {
     businessKey: 'REQ-2026-002',
     definitionCode: 'DEMO_MULTI_ROUTE',
-    attributes: { requestType: 'COMPLEX', amount: 2500000, region: 'MSK' },
+    attributes: { requestType: 'COMPLEX', amount: 2500000, region: 'MSK', organizationId: 'ORG-42' },
     startedBy: 'coordinator1',
     subProcess: { definitionCode: 'DEMO_SUBPROCESS_CHECK', businessKey: 'REQ-2026-002-SUB', startedBy: 'coordinator1' },
   },
@@ -190,6 +190,13 @@ const REQUESTS = [
     attributes: { requestType: 'COMPLEX', applicant: 'ИП Петров' },
     startedBy: 'coordinator1',
     then: 'cancel',
+  },
+  {
+    businessKey: 'REQ-2026-009',
+    definitionCode: 'DEMO_MULTI_ROUTE',
+    attributes: { requestType: 'COMPLEX', amount: 1500000, region: 'SPB', organizationId: 'ORG-77' },
+    startedBy: 'coordinator1',
+    then: 'suspend',
   },
   {
     businessKey: 'REQ-2026-008',
@@ -324,6 +331,11 @@ async function ensureRequests(definitionsByCode) {
         reason: 'Перераспределение нагрузки: основной эксперт занят',
       });
       note = `${instance.currentStepCode}, reassigned to analyst1`;
+    } else if (request.then === 'suspend') {
+      await api('manager1', 'POST', `/process-instances/${instance.id}/suspend`, {
+        reason: 'Ожидание документов от заявителя',
+      });
+      note = `${instance.currentStepCode}, suspended`;
     } else if (request.then === 'cancel') {
       await api('manager1', 'POST', `/process-instances/${instance.id}/cancel`, {
         reason: 'Заявитель отозвал заявку',

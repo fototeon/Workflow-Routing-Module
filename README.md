@@ -113,9 +113,9 @@ login page (authorization code + PKCE) is what you want if any of those matter.
 
 The module ships with no data out of the box (templates and requests are created through the UI or
 the API). The seed script fills a database that covers the module's features and every role — three
-SLA policies, five process templates (including a deliberately unpublished draft) and eight requests
-in different states, one of which breaches its SLA within five minutes so escalation is observable
-live:
+SLA policies, five process templates (including a deliberately unpublished draft) and nine requests
+in different states — running, completed, cancelled, reassigned, suspended and a sub-process — one of
+which breaches its SLA within five minutes so escalation is observable live:
 
 ```bash
 cd frontend/workflow-ui
@@ -182,31 +182,51 @@ wired into the MUI theme in `frontend/workflow-ui/src/theme.ts`.
 
 ## Known simplifications (documented, not oversights)
 
-- **SLA scheduler** is a single-node `@Scheduled` poller, not a clustered job runner — adequate for
-  a practice-project deployment, not for horizontally-scaled production use.
-- **Process map visualization** is a linear MUI `Stepper` + event-history list rather than a full
-  graph-diagram editor.
+- **Related services** (expertise-, review-, document-, notification-service) are not integrated —
+  they do not exist within this work. The module implements its own side of the contract: it
+  consumes `RequestAccepted` and publishes domain events plus notification intents.
 - **Routing-rule visual builder** supports one level of AND/OR grouping over flat conditions, with a
   raw-JSON fallback for deeper nesting (the backend's condition-tree evaluator itself supports
   arbitrary nesting).
-- **Attribute-level access checks** (e.g., "this applicant may only see their own case") are left as
-  a pluggable extension point since the owning org/user directory service isn't part of this module.
+- **The organization/user directory** lives in another service, so the access model matches the
+  organization claim it is handed rather than resolving hierarchies itself.
+- **Public holidays** for the SLA calendar are a list in configuration, not a reference-data service.
+- **The SLA scheduler** runs on every replica; work is idempotent per task and the outbox claims its
+  batch with `SKIP LOCKED`, so replicas do not duplicate published events.
+
+## Feature map
+
+| Area | Where |
+|------|-------|
+| Templates, versions, routing rules, publication | `Шаблоны процессов`, `/api/process-definitions` |
+| Start, suspend/resume, cancel, sub-processes | process card, `/api/process-instances` |
+| Tasks: complete, reassign with a reason, bulk complete | `Задачи`, `/api/tasks` |
+| SLA windows, business calendar, escalation, breach | `SLA политики`, background scheduler |
+| Process journal and configuration journal | process card, `/{id}/journal` endpoints |
+| Dashboard and CSV exports | `Аналитика`, `/api/analytics/summary`, `/export` endpoints |
+| Domain events and notification intents | Kafka topics `workflow.*` |
 
 ## Verification status
 
 Executed against a real toolchain (JDK 21, Maven 3.9, Node 22, Docker Engine 29):
 
-- **Backend** — `mvn verify` is green: 33 unit tests plus 5 integration tests against Testcontainers
-  Postgres 16 and Kafka (golden path, inbound `RequestAccepted` listener, JWT security with a
-  WireMock issuer). Flyway migrations apply and `ddl-auto: validate` passes against them.
+- **Backend** — `mvn verify` is green: 37 unit tests plus 50 integration tests against Testcontainers
+  Postgres 16 and Kafka. Coverage includes the golden path, the inbound `RequestAccepted` listener,
+  JWT security with a WireMock issuer, a 39-case role/endpoint permission matrix, the OpenAPI and
+  event-schema contract checks, pauses, cancellation cascade, the configuration journal, the
+  dashboard, exports and the access model. Flyway migrations apply and `ddl-auto: validate` passes.
 - **Frontend** — `npm run build` and `npm run lint` pass clean.
 - **Running system** — Postgres, Kafka and Keycloak (realm auto-import included) started from
   `docker-compose.yml`, backend and Vite dev server run against them, the demo dataset seeded, and
-  the Playwright suite passes 3/3: the golden path (start → task → complete → COMPLETED + event
-  journal), reassignment with a mandatory reason, and analyst role restrictions.
+  the Playwright suite passes 10/10: the golden path (start → task → complete → COMPLETED + event
+  journal), reassignment with a mandatory reason, role restrictions, suspend/resume, sub-process
+  start and the walk back to the parent, the route map, bulk completion, the analyst dashboard with
+  a CSV download, and saved views.
 - **Demo dataset** — every item in [TEST-DATA.md](TEST-DATA.md) was created and checked on that
   running stack, including the documented HTTP codes for the negative cases and the live SLA run
   (escalation to MANAGER at 40%, to ADMIN at 80%, breach at 100%).
+- **Specification coverage** — [TZ-COMPLIANCE.md](TZ-COMPLIANCE.md) walks every section of
+  TZ-02-WORKFLOW; what remains open there is scope that belongs to other services.
 - **Not verified here** — the two application image builds (`docker compose up --build`): the
   environment used for this check could not reach Docker Hub and the Maven/npm registries from
   inside build containers. Everything the images run was exercised from source instead.

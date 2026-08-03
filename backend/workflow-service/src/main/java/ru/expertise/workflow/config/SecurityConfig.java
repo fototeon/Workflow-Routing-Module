@@ -16,6 +16,9 @@ public class SecurityConfig {
 
     private static final String[] PUBLIC_PATHS = {
             "/actuator/health/**", "/actuator/info",
+            // Scrape endpoint: Prometheus pulls it without a token, so in production it must be
+            // reachable only from the monitoring network (gateway/firewall level, TZ §10).
+            "/actuator/prometheus",
             "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
     };
 
