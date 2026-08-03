@@ -93,6 +93,21 @@ Check, in order:
 | `coordinator1` | `coordinator123`| COORDINATOR |
 | `analyst1`     | `analyst123`    | ANALYST     |
 
+### Authentication
+
+The UI carries its own sign-in screen instead of redirecting to Keycloak's hosted login page: the
+form posts the credentials to Keycloak's token endpoint (OAuth2 direct access grant, enabled for
+the `workflow-ui` client) and keeps the returned tokens in `sessionStorage`. Every API call carries
+that access token, which is refreshed shortly before it expires and once more on a `401` before the
+request is replayed; `Выйти` revokes the refresh token at Keycloak. Roles come from the access
+token's `realm_access` claim — the same claim the backend authorizes on.
+
+Because the browser talks to Keycloak directly, the `workflow-ui` client's **Web Origins** must
+list the UI's origin (`http://localhost:5173` in the shipped realm) or the token request is blocked
+by CORS. Note the trade-off this flow makes: the password passes through the application, and the
+direct access grant is a legacy grant — no SSO, no MFA, no external identity providers. A hosted
+login page (authorization code + PKCE) is what you want if any of those matter.
+
 ### Seed the demo dataset
 
 The module ships with no data out of the box (templates and requests are created through the UI or

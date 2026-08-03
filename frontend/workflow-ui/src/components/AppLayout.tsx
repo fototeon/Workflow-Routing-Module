@@ -14,7 +14,7 @@ import {
 } from '@mui/material';
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useAuth } from 'react-oidc-context';
+import { useAuth } from '../auth/authContext';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import AssignmentTurnedInOutlinedIcon from '@mui/icons-material/AssignmentTurnedInOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
@@ -45,13 +45,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
   const auth = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const roles = getRoles(auth.user);
+  const roles = getRoles(auth.accessToken);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
 
   const visibleItems = NAV_ITEMS.filter((item) => item.allow.some((role) => roles.includes(role)));
   const activeItem = visibleItems.find((item) => location.pathname.startsWith(item.path));
   const pageTitle = Object.entries(PAGE_TITLES).find(([path]) => location.pathname.startsWith(path))?.[1] ?? '';
-  const username = (auth.user?.profile.preferred_username as string) ?? '';
+  const username = auth.username;
   const initials = username.slice(0, 2).toUpperCase();
 
   return (
@@ -174,7 +174,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <MenuItem
                 onClick={() => {
                   setMenuAnchor(null);
-                  auth.signoutRedirect();
+                  void auth.logout();
                 }}
               >
                 <LogoutIcon fontSize="small" sx={{ mr: 1 }} />
