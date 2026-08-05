@@ -20,6 +20,8 @@ import {
   TableRow,
   TableSortLabel,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { completeTask, reassignTask, searchTasks } from '../api/tasks';
@@ -45,6 +47,7 @@ export function TaskListPage() {
   const [status, setStatus] = useState<TaskInstanceStatus | ''>('');
   const [reassignTarget, setReassignTarget] = useState<TaskInstance | null>(null);
   const [reassignTo, setReassignTo] = useState('');
+  const [reassignMode, setReassignMode] = useState<'role' | 'user'>('role');
   const [reassignReason, setReassignReason] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -265,13 +268,45 @@ export function TaskListPage() {
 
       <Dialog open={!!reassignTarget} onClose={() => setReassignTarget(null)} fullWidth maxWidth="sm">
         <DialogTitle>Переназначить задачу</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-          <TextField
-            label="Новый исполнитель (id пользователя)"
-            value={reassignTo}
-            onChange={(e) => setReassignTo(e.target.value)}
-            autoFocus
-          />
+        {/* pt: 3 — with less top padding the floating label of the first field is clipped by the title. */}
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 3 }}>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={reassignMode}
+            onChange={(_, mode) => {
+              if (mode) {
+                setReassignMode(mode);
+                setReassignTo('');
+              }
+            }}
+          >
+            <ToggleButton value="role">На роль</ToggleButton>
+            <ToggleButton value="user">На пользователя</ToggleButton>
+          </ToggleButtonGroup>
+          {reassignMode === 'role' ? (
+            <TextField
+              select
+              label="Роль-исполнитель"
+              value={reassignTo}
+              onChange={(e) => setReassignTo(e.target.value)}
+              helperText="Задача вернётся в очередь этой роли: персональный исполнитель будет снят"
+            >
+              {Object.values(ROLES).map((role) => (
+                <MenuItem key={role} value={role}>
+                  {role}
+                </MenuItem>
+              ))}
+            </TextField>
+          ) : (
+            <TextField
+              label="Идентификатор пользователя"
+              value={reassignTo}
+              onChange={(e) => setReassignTo(e.target.value)}
+              helperText="Логин из каталога пользователей, например coordinator1"
+              autoFocus
+            />
+          )}
           <TextField
             label="Причина"
             multiline
@@ -288,7 +323,11 @@ export function TaskListPage() {
               if (!reassignTarget) return;
               setActionError(null);
               try {
-                await reassignTask(reassignTarget.id, reassignTo, reassignReason);
+                await reassignTask(
+                  reassignTarget.id,
+                  reassignMode === 'role' ? { toRole: reassignTo } : { toAssignee: reassignTo },
+                  reassignReason,
+                );
                 setReassignTarget(null);
                 setReassignTo('');
                 setReassignReason('');

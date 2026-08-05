@@ -228,7 +228,7 @@ wired into the MUI theme in `frontend/workflow-ui/src/theme.ts`.
 |------|-------|
 | Templates, versions, routing rules, publication | `Шаблоны процессов`, `/api/process-definitions` |
 | Start, suspend/resume, cancel, sub-processes | process card, `/api/process-instances` |
-| Tasks: complete, reassign with a reason, bulk complete | `Задачи`, `/api/tasks` |
+| Tasks: complete, reassign to a person or a role queue, bulk complete | `Задачи`, `/api/tasks` |
 | SLA windows, business calendar, escalation, breach | `SLA политики`, background scheduler |
 | Process journal and configuration journal | process card, `/{id}/journal` endpoints |
 | Dashboard and CSV exports | `Аналитика`, `/api/analytics/summary`, `/export` endpoints |
@@ -238,7 +238,7 @@ wired into the MUI theme in `frontend/workflow-ui/src/theme.ts`.
 
 Executed against a real toolchain (JDK 21, Maven 3.9, Node 22, Docker Engine 29):
 
-- **Backend** — `mvn verify` is green: 37 unit tests plus 50 integration tests against Testcontainers
+- **Backend** — `mvn verify` is green: 39 unit tests plus 51 integration tests against Testcontainers
   Postgres 16 and Kafka. Coverage includes the golden path, the inbound `RequestAccepted` listener,
   JWT security with a WireMock issuer, a 39-case role/endpoint permission matrix, the OpenAPI and
   event-schema contract checks, pauses, cancellation cascade, the configuration journal, the
@@ -246,10 +246,10 @@ Executed against a real toolchain (JDK 21, Maven 3.9, Node 22, Docker Engine 29)
 - **Frontend** — `npm run build` and `npm run lint` pass clean.
 - **Running system** — Postgres, Kafka and Keycloak (realm auto-import included) started from
   `docker-compose.yml`, backend and Vite dev server run against them, the demo dataset seeded, and
-  the Playwright suite passes 10/10: the golden path (start → task → complete → COMPLETED + event
+  the Playwright suite passes 12/12: the golden path (start → task → complete → COMPLETED + event
   journal), reassignment with a mandatory reason, role restrictions, suspend/resume, sub-process
   start and the walk back to the parent, the route map, bulk completion, the analyst dashboard with
-  a CSV download, and saved views.
+  a CSV download, saved views, and switching accounts without landing on a forbidden page.
 - **Demo dataset** — every item in [TEST-DATA.md](TEST-DATA.md) was created and checked on that
   running stack, including the documented HTTP codes for the negative cases and the live SLA run
   (escalation to MANAGER at 40%, to ADMIN at 80%, breach at 100%).

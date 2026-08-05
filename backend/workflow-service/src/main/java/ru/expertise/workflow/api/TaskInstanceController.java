@@ -86,8 +86,8 @@ public class TaskInstanceController {
     @PostMapping("/{id}/reassign")
     @PreAuthorize("hasAnyRole('MANAGER', 'ADMIN')")
     public TaskInstanceDtos.Response reassign(@PathVariable UUID id, @Valid @RequestBody TaskInstanceDtos.ReassignRequest request) {
-        TaskInstance task = taskInstanceService.reassignTask(id, request.toAssignee(), request.reason(),
-                currentActorResolver.currentActor());
+        TaskInstance task = taskInstanceService.reassignTask(id, request.toAssignee(), request.toRole(),
+                request.reason(), currentActorResolver.currentActor());
         return toResponse(task);
     }
 

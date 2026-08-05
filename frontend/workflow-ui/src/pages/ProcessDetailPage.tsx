@@ -245,7 +245,7 @@ export function ProcessDetailPage() {
 
       <Dialog open={subOpen} onClose={() => setSubOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Запустить подпроцесс</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 3 }}>
           <TextField
             select
             label="Шаблон подпроцесса"

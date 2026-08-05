@@ -17,8 +17,10 @@ public final class TaskInstanceDtos {
     ) {
     }
 
+    /** Exactly one of {@code toAssignee} and {@code toRole} must be set; the reason is always required. */
     public record ReassignRequest(
-            @NotBlank String toAssignee,
+            String toAssignee,
+            String toRole,
             @NotBlank String reason
     ) {
     }

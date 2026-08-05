@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Alert, Avatar, Box, Button, CircularProgress, Paper, TextField, Typography } from '@mui/material';
 import { useAuth } from './authContext';
 import { colors } from '../colors';
@@ -6,6 +7,7 @@ import { colors } from '../colors';
 /** The application's own sign-in screen: credentials go to Keycloak and come back as a token. */
 export function LoginPage() {
   const auth = useAuth();
+  const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -17,6 +19,8 @@ export function LoginPage() {
     setSubmitting(true);
     try {
       await auth.login(username.trim(), password);
+      // The route left over from the previous session may be closed for this role.
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Не удалось выполнить вход.');
     } finally {

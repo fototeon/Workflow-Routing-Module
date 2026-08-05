@@ -237,7 +237,7 @@ export function ProcessListPage() {
 
       <Dialog open={startOpen} onClose={() => setStartOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Запустить новый процесс</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 3 }}>
           <TextField
             select
             label="Шаблон процесса"

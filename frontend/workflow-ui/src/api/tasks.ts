@@ -26,7 +26,13 @@ export async function completeTask(id: string, outcomeAttributes?: Record<string
   return data;
 }
 
-export async function reassignTask(id: string, toAssignee: string, reason: string): Promise<TaskInstance> {
-  const { data } = await apiClient.post<TaskInstance>(`/tasks/${id}/reassign`, { toAssignee, reason });
+export interface ReassignTarget {
+  /** Exactly one of the two: a specific person takes the task, or it goes back to a role queue. */
+  toAssignee?: string;
+  toRole?: string;
+}
+
+export async function reassignTask(id: string, target: ReassignTarget, reason: string): Promise<TaskInstance> {
+  const { data } = await apiClient.post<TaskInstance>(`/tasks/${id}/reassign`, { ...target, reason });
   return data;
 }
