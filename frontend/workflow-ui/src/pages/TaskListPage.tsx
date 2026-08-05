@@ -20,10 +20,12 @@ import {
   TableRow,
   TableSortLabel,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { completeTask, reassignTask, searchTasks } from '../api/tasks';
-import { describeLoadError } from '../api/errors';
+import { describeActionError, describeLoadError } from '../api/errors';
 import { downloadCsv } from '../api/analytics';
 import { SavedViews } from '../components/SavedViews';
 import DownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
@@ -45,9 +47,11 @@ export function TaskListPage() {
   const [status, setStatus] = useState<TaskInstanceStatus | ''>('');
   const [reassignTarget, setReassignTarget] = useState<TaskInstance | null>(null);
   const [reassignTo, setReassignTo] = useState('');
+  const [reassignMode, setReassignMode] = useState<'role' | 'user'>('role');
   const [reassignReason, setReassignReason] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [sort, setSort] = useState<{ field: string; direction: 'asc' | 'desc' }>({ field: 'createdAt', direction: 'desc' });
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -81,6 +85,11 @@ export function TaskListPage() {
           {loadError}
         </Alert>
       )}
+      {actionError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+          {actionError}
+        </Alert>
+      )}
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 2, flexWrap: 'wrap' }}>
         <SavedViews
           storageKey="workflow.views.tasks"
@@ -96,6 +105,7 @@ export function TaskListPage() {
               disabled={selected.length === 0 || bulkBusy}
               onClick={async () => {
                 setBulkBusy(true);
+                setActionError(null);
                 try {
                   // Bulk action within the caller's rights (TZ §9): each task goes through the same
                   // endpoint as the single-row action, so the server re-checks every one of them.
@@ -103,9 +113,11 @@ export function TaskListPage() {
                     await completeTask(taskId);
                   }
                   setSelected([]);
-                  setReloadKey((k) => k + 1);
+                } catch (err) {
+                  setActionError(describeActionError(err, 'Не удалось выполнить часть задач.'));
                 } finally {
                   setBulkBusy(false);
+                  setReloadKey((k) => k + 1);
                 }
               }}
             >
@@ -210,8 +222,13 @@ export function TaskListPage() {
                       <Button
                         size="small"
                         onClick={async () => {
-                          await completeTask(row.id);
-                          setReloadKey((k) => k + 1);
+                          setActionError(null);
+                          try {
+                            await completeTask(row.id);
+                            setReloadKey((k) => k + 1);
+                          } catch (err) {
+                            setActionError(describeActionError(err, 'Не удалось выполнить задачу.'));
+                          }
                         }}
                       >
                         Выполнить
@@ -251,13 +268,45 @@ export function TaskListPage() {
 
       <Dialog open={!!reassignTarget} onClose={() => setReassignTarget(null)} fullWidth maxWidth="sm">
         <DialogTitle>Переназначить задачу</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-          <TextField
-            label="Новый исполнитель (id пользователя)"
-            value={reassignTo}
-            onChange={(e) => setReassignTo(e.target.value)}
-            autoFocus
-          />
+        {/* pt: 3 — with less top padding the floating label of the first field is clipped by the title. */}
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 3 }}>
+          <ToggleButtonGroup
+            exclusive
+            size="small"
+            value={reassignMode}
+            onChange={(_, mode) => {
+              if (mode) {
+                setReassignMode(mode);
+                setReassignTo('');
+              }
+            }}
+          >
+            <ToggleButton value="role">На роль</ToggleButton>
+            <ToggleButton value="user">На пользователя</ToggleButton>
+          </ToggleButtonGroup>
+          {reassignMode === 'role' ? (
+            <TextField
+              select
+              label="Роль-исполнитель"
+              value={reassignTo}
+              onChange={(e) => setReassignTo(e.target.value)}
+              helperText="Задача вернётся в очередь этой роли: персональный исполнитель будет снят"
+            >
+              {Object.values(ROLES).map((role) => (
+                <MenuItem key={role} value={role}>
+                  {role}
+                </MenuItem>
+              ))}
+            </TextField>
+          ) : (
+            <TextField
+              label="Идентификатор пользователя"
+              value={reassignTo}
+              onChange={(e) => setReassignTo(e.target.value)}
+              helperText="Логин из каталога пользователей, например coordinator1"
+              autoFocus
+            />
+          )}
           <TextField
             label="Причина"
             multiline
@@ -272,11 +321,20 @@ export function TaskListPage() {
             disabled={!reassignTo.trim() || !reassignReason.trim()}
             onClick={async () => {
               if (!reassignTarget) return;
-              await reassignTask(reassignTarget.id, reassignTo, reassignReason);
-              setReassignTarget(null);
-              setReassignTo('');
-              setReassignReason('');
-              setReloadKey((k) => k + 1);
+              setActionError(null);
+              try {
+                await reassignTask(
+                  reassignTarget.id,
+                  reassignMode === 'role' ? { toRole: reassignTo } : { toAssignee: reassignTo },
+                  reassignReason,
+                );
+                setReassignTarget(null);
+                setReassignTo('');
+                setReassignReason('');
+                setReloadKey((k) => k + 1);
+              } catch (err) {
+                setActionError(describeActionError(err, 'Не удалось переназначить задачу.'));
+              }
             }}
           >
             Подтвердить

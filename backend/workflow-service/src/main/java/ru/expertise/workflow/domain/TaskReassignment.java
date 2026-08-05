@@ -28,8 +28,12 @@ public class TaskReassignment {
     @Column(name = "from_assignee")
     private String fromAssignee;
 
-    @Column(name = "to_assignee", nullable = false)
+    /** Exactly one of the two is set: a person takes the task, or it goes back to a role queue. */
+    @Column(name = "to_assignee")
     private String toAssignee;
+
+    @Column(name = "to_role")
+    private String toRole;
 
     @Column(nullable = false)
     private String reason;
@@ -66,6 +70,14 @@ public class TaskReassignment {
 
     public void setToAssignee(String toAssignee) {
         this.toAssignee = toAssignee;
+    }
+
+    public String getToRole() {
+        return toRole;
+    }
+
+    public void setToRole(String toRole) {
+        this.toRole = toRole;
     }
 
     public String getReason() {

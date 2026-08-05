@@ -27,3 +27,6 @@ Thumbs.db
 
 # Docker volumes (local dev data)
 infra/.data/
+
+# Optional corporate root certificate for image builds (never committed)
+ca.crt

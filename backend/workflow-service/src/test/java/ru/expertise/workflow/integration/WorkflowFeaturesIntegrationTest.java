@@ -122,6 +122,43 @@ class WorkflowFeaturesIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void reassignmentTargetsEitherAPersonOrARoleQueue() throws Exception {
+        UUID definitionId = publishedDefinition("REASSIGN_" + System.nanoTime());
+        UUID instanceId = startInstance(definitionId, "REQ-REASSIGN-" + System.nanoTime());
+        UUID taskId = UUID.fromString(firstTask(instanceId).get("id").asText());
+
+        mockMvc.perform(post("/api/tasks/{id}/reassign", taskId)
+                        .with(jwt().authorities(role("MANAGER")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"toAssignee\":\"analyst1\",\"reason\":\"Персональное поручение\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assigneeId").value("analyst1"));
+
+        // Handing it back to a queue drops the personal assignee.
+        mockMvc.perform(post("/api/tasks/{id}/reassign", taskId)
+                        .with(jwt().authorities(role("MANAGER")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"toRole\":\"MANAGER\",\"reason\":\"Возврат в очередь роли\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.assigneeRole").value("MANAGER"))
+                .andExpect(jsonPath("$.assigneeId").doesNotExist());
+
+        // Neither target, or both at once, is a bad request.
+        mockMvc.perform(post("/api/tasks/{id}/reassign", taskId)
+                        .with(jwt().authorities(role("MANAGER")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reason\":\"Без адресата\"}"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(post("/api/tasks/{id}/reassign", taskId)
+                        .with(jwt().authorities(role("MANAGER")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"toAssignee\":\"analyst1\",\"toRole\":\"MANAGER\",\"reason\":\"Оба сразу\"}"))
+                .andExpect(status().isBadRequest());
+
+        assertThat(eventTypesOf(instanceId)).contains("TaskReassigned");
+    }
+
+    @Test
     void analystCanReadTheDashboardAndExportCsv() throws Exception {
         UUID definitionId = publishedDefinition("REPORT_" + System.nanoTime());
         String businessKey = "REQ-REPORT-" + System.nanoTime();

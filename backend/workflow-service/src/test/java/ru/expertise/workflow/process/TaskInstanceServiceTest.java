@@ -72,8 +72,30 @@ class TaskInstanceServiceTest {
     void reassignRejectsBlankReason() {
         UUID taskId = UUID.randomUUID();
 
-        assertThatThrownBy(() -> service.reassignTask(taskId, "user-2", "  ", "user-1"))
+        assertThatThrownBy(() -> service.reassignTask(taskId, "user-2", null, "  ", "user-1"))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void reassignRequiresExactlyOneTarget() {
+        UUID taskId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service.reassignTask(taskId, null, null, "reason", "user-1"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> service.reassignTask(taskId, "user-2", "MANAGER", "reason", "user-1"))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void reassignToRoleClearsThePersonalAssignee() throws Exception {
+        TaskInstance task = taskWithStatus(TaskInstanceStatus.IN_PROGRESS);
+        task.setAssigneeId("coordinator1");
+        when(taskInstanceRepository.findById(task.getId())).thenReturn(Optional.of(task));
+
+        TaskInstance reassigned = service.reassignTask(task.getId(), null, "MANAGER", "Возврат в очередь", "manager1");
+
+        org.assertj.core.api.Assertions.assertThat(reassigned.getAssigneeRole()).isEqualTo("MANAGER");
+        org.assertj.core.api.Assertions.assertThat(reassigned.getAssigneeId()).isNull();
     }
 
     @Test
@@ -81,7 +103,7 @@ class TaskInstanceServiceTest {
         TaskInstance task = taskWithStatus(TaskInstanceStatus.COMPLETED);
         when(taskInstanceRepository.findById(task.getId())).thenReturn(Optional.of(task));
 
-        assertThatThrownBy(() -> service.reassignTask(task.getId(), "user-2", "workload rebalance", "user-1"))
+        assertThatThrownBy(() -> service.reassignTask(task.getId(), "user-2", null, "workload rebalance", "user-1"))
                 .isInstanceOf(InvalidStatusTransitionException.class);
     }
 

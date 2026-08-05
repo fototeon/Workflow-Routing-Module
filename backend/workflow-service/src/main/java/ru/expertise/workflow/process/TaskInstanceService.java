@@ -125,9 +125,14 @@ public class TaskInstanceService {
 
     @Transactional
     @Audited(DomainEventType.TASK_REASSIGNED)
-    public TaskInstance reassignTask(UUID taskId, String toAssignee, String reason, String actorId) {
+    public TaskInstance reassignTask(UUID taskId, String toAssignee, String toRole, String reason, String actorId) {
         if (reason == null || reason.isBlank()) {
             throw new IllegalArgumentException("Reassignment reason is required");
+        }
+        boolean toPerson = toAssignee != null && !toAssignee.isBlank();
+        boolean toQueue = toRole != null && !toRole.isBlank();
+        if (toPerson == toQueue) {
+            throw new IllegalArgumentException("Reassignment target must be either a user or a role, not both");
         }
         TaskInstance task = get(taskId);
         if (task.getStatus() == TaskInstanceStatus.COMPLETED || task.getStatus() == TaskInstanceStatus.CANCELLED) {
@@ -136,23 +141,31 @@ public class TaskInstanceService {
 
         TaskReassignment reassignment = new TaskReassignment();
         reassignment.setTaskInstance(task);
-        reassignment.setFromAssignee(task.getAssigneeId());
-        reassignment.setToAssignee(toAssignee);
+        reassignment.setFromAssignee(task.getAssigneeId() != null ? task.getAssigneeId() : task.getAssigneeRole());
+        reassignment.setToAssignee(toPerson ? toAssignee : null);
+        reassignment.setToRole(toQueue ? toRole : null);
         reassignment.setReason(reason);
         reassignment.setActorId(actorId);
         taskReassignmentRepository.save(reassignment);
 
-        task.setAssigneeId(toAssignee);
+        if (toPerson) {
+            task.setAssigneeId(toAssignee);
+        } else {
+            // Handing the task back to a queue: nobody owns it personally any more.
+            task.setAssigneeId(null);
+            task.setAssigneeRole(toRole);
+        }
         task = taskInstanceRepository.save(task);
 
         AuditContext.processInstanceId(task.getProcessInstance().getId());
         AuditContext.taskInstanceId(task.getId());
-        AuditContext.detail("toAssignee", toAssignee);
+        AuditContext.detail(toPerson ? "toAssignee" : "toRole", toPerson ? toAssignee : toRole);
         AuditContext.detail("reason", reason);
 
         outboxEventWriter.enqueue("TaskInstance", task.getId().toString(), DomainEventType.TASK_REASSIGNED,
                 properties.getKafka().getTopicTaskEvents(), null, task.getProcessInstance().getBusinessKey(),
-                Map.of("taskInstanceId", task.getId(), "toAssignee", toAssignee, "reason", reason));
+                Map.of("taskInstanceId", task.getId(), "target", toPerson ? toAssignee : toRole,
+                        "targetType", toPerson ? "USER" : "ROLE", "reason", reason));
         notificationPublisher.taskNotification(task, "TASK_REASSIGNED", null);
 
         return task;

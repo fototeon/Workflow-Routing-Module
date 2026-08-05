@@ -24,7 +24,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { listPublishedProcessDefinitions } from '../api/processDefinitions';
 import { searchProcessInstances, startProcessInstance } from '../api/processInstances';
-import { describeLoadError } from '../api/errors';
+import { describeActionError, describeLoadError } from '../api/errors';
 import { downloadCsv } from '../api/analytics';
 import { SavedViews } from '../components/SavedViews';
 import DownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
@@ -237,7 +237,7 @@ export function ProcessListPage() {
 
       <Dialog open={startOpen} onClose={() => setStartOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Запустить новый процесс</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 3 }}>
           <TextField
             select
             label="Шаблон процесса"
@@ -259,6 +259,7 @@ export function ProcessListPage() {
             label="Бизнес-ключ"
             value={startBusinessKey}
             onChange={(e) => setStartBusinessKey(e.target.value)}
+            helperText="Номер заявки или дела во внешней системе — по нему процесс ищут в реестре и связывают с событиями. Например: REQ-2026-001"
           />
           <TextField
             label="Атрибуты (JSON)"
@@ -299,7 +300,7 @@ export function ProcessListPage() {
                 setReloadKey((k) => k + 1);
                 navigate(`/processes/${created.id}`);
               } catch (err) {
-                setStartError(err instanceof Error ? err.message : 'Не удалось запустить процесс.');
+                setStartError(describeActionError(err, 'Не удалось запустить процесс.'));
               }
             }}
           >

@@ -66,6 +66,34 @@ Keycloak issuer — already defaults to the addresses the compose stack exposes 
 Keycloak stays on `http://localhost:8081` (admin console: `admin` / `admin`) in both modes, so the
 demo users and the seed script below work unchanged.
 
+### If `docker compose up --build` fails on `npm ci` or on Maven
+
+```
+target workflow-ui: failed to solve: process "/bin/sh -c npm ci" did not complete successfully: exit code: 1
+```
+
+npm reports the real reason a few lines above that summary — the last line is only its generic
+wrapper (`Exit handler never called!` usually hides a fetch failure). To see it, build that image on
+its own:
+
+```
+docker build frontend/workflow-ui
+```
+
+The two causes worth checking first:
+
+1. **The network intercepts TLS** (corporate proxy, antivirus, VPN). npm reports
+   `SELF_SIGNED_CERT_IN_CHAIN`, Maven reports `PKIX path building failed`. Export your root
+   certificate to a PEM file, save it as `frontend/workflow-ui/ca.crt` and
+   `backend/workflow-service/ca.crt`, and rebuild — both Dockerfiles pick the file up when it is
+   there and ignore it when it is not. The file is gitignored; never disable certificate checking
+   instead.
+2. **The registry is unreachable or very slow** — `ETIMEDOUT`, `ECONNRESET`, or a build that grinds
+   for many minutes before failing. Check the proxy settings of Docker Desktop
+   (*Settings → Resources → Proxies*) and retry; the install already retries five times per package.
+
+If neither applies, run the module from source — that path needs no image builds at all.
+
 ### If the UI shows an empty register and the Vite terminal logs `ECONNREFUSED`
 
 ```
@@ -200,7 +228,7 @@ wired into the MUI theme in `frontend/workflow-ui/src/theme.ts`.
 |------|-------|
 | Templates, versions, routing rules, publication | `Шаблоны процессов`, `/api/process-definitions` |
 | Start, suspend/resume, cancel, sub-processes | process card, `/api/process-instances` |
-| Tasks: complete, reassign with a reason, bulk complete | `Задачи`, `/api/tasks` |
+| Tasks: complete, reassign to a person or a role queue, bulk complete | `Задачи`, `/api/tasks` |
 | SLA windows, business calendar, escalation, breach | `SLA политики`, background scheduler |
 | Process journal and configuration journal | process card, `/{id}/journal` endpoints |
 | Dashboard and CSV exports | `Аналитика`, `/api/analytics/summary`, `/export` endpoints |
@@ -210,7 +238,7 @@ wired into the MUI theme in `frontend/workflow-ui/src/theme.ts`.
 
 Executed against a real toolchain (JDK 21, Maven 3.9, Node 22, Docker Engine 29):
 
-- **Backend** — `mvn verify` is green: 37 unit tests plus 50 integration tests against Testcontainers
+- **Backend** — `mvn verify` is green: 39 unit tests plus 51 integration tests against Testcontainers
   Postgres 16 and Kafka. Coverage includes the golden path, the inbound `RequestAccepted` listener,
   JWT security with a WireMock issuer, a 39-case role/endpoint permission matrix, the OpenAPI and
   event-schema contract checks, pauses, cancellation cascade, the configuration journal, the
@@ -218,15 +246,16 @@ Executed against a real toolchain (JDK 21, Maven 3.9, Node 22, Docker Engine 29)
 - **Frontend** — `npm run build` and `npm run lint` pass clean.
 - **Running system** — Postgres, Kafka and Keycloak (realm auto-import included) started from
   `docker-compose.yml`, backend and Vite dev server run against them, the demo dataset seeded, and
-  the Playwright suite passes 10/10: the golden path (start → task → complete → COMPLETED + event
+  the Playwright suite passes 12/12: the golden path (start → task → complete → COMPLETED + event
   journal), reassignment with a mandatory reason, role restrictions, suspend/resume, sub-process
   start and the walk back to the parent, the route map, bulk completion, the analyst dashboard with
-  a CSV download, and saved views.
+  a CSV download, saved views, and switching accounts without landing on a forbidden page.
 - **Demo dataset** — every item in [TEST-DATA.md](TEST-DATA.md) was created and checked on that
   running stack, including the documented HTTP codes for the negative cases and the live SLA run
   (escalation to MANAGER at 40%, to ADMIN at 80%, breach at 100%).
 - **Specification coverage** — [TZ-COMPLIANCE.md](TZ-COMPLIANCE.md) walks every section of
   TZ-02-WORKFLOW; what remains open there is scope that belongs to other services.
-- **Not verified here** — the two application image builds (`docker compose up --build`): the
-  environment used for this check could not reach Docker Hub and the Maven/npm registries from
-  inside build containers. Everything the images run was exercised from source instead.
+- **Images and compose** — both application images build, and the whole stack (`docker compose up -d
+  --build`) comes up from them: the backend container answers `/actuator/health`, nginx serves the UI
+  and proxies `/api` to the service, the demo dataset seeds against it and the Playwright suite passes
+  10/10 through the containerised UI.

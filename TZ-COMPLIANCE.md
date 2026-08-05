@@ -2,7 +2,7 @@
 
 Разбор по разделам технического задания: что реализовано, чем это подтверждается и где отклонения.
 Ссылки на код даны от корня репозитория. Проверялось на версии кода в этой ветке; прогон тестов —
-`mvn verify` (37 модульных + 50 интеграционных), `npm run e2e` (10 сценариев), а также ручные
+`mvn verify` (39 модульных + 51 интеграционный), `npm run e2e` (12 сценариев), а также ручные
 проверки API, описанные в [TEST-DATA.md](TEST-DATA.md).
 
 Обозначения: ✅ реализовано · ⚠️ частично · ❌ нет.
@@ -17,7 +17,7 @@
 | REQ-02-004 | Правила маршрутизации по атрибутам дела | ✅ | Дерево условий в JSONB, операторы EQ/NEQ/GT/GTE/LT/LTE/IN/NOT_IN/CONTAINS/EXISTS и группы AND/OR/NOT: `routing/RoutingConditionEvaluator.java`, выбор по приоритету — `routing/RoutingEngine.java`. Тесты: `RoutingConditionEvaluatorTest` (8), `RoutingEngineTest` (2). Демоданные: шаблон `DEMO_MULTI_ROUTE` |
 | REQ-02-005 | Контроль SLA с календарями | ✅ | Расчёт срока с рабочим календарём (пн–пт, 9:00–18:00) — `sla/BusinessCalendar.java`, `sla/SlaDueDateCalculator.java`; политика хранит окно и флаг календаря. Праздники задаются в `workflow.sla.holidays`. Тесты: `BusinessCalendarTest` (6, включая праздники), `SlaDueDateCalculatorTest` (2) |
 | REQ-02-006 | Эскалации при просрочке | ✅ | Пороговые правила `{afterPercent, escalateToRole}`, применение и пометка просрочки: `sla/EscalationResolver.java`, `sla/TaskSlaProcessor.java`, `sla/SlaEscalationScheduler.java`. Тесты: `EscalationResolverTest` (6), `SlaEscalationSchedulerTest` (4). Проверено вживую на `REQ-2026-008`: эскалация на 40% и 80%, просрочка на 100% |
-| REQ-02-007 | Переназначение задачи с записью причины | ✅ | Причина обязательна на сервере и в UI, история в `TaskReassignment`: `process/TaskInstanceService.java:112`, `pages/TaskListPage.tsx`. Тесты: `TaskInstanceServiceTest.reassignRejectsBlankReason`, e2e `reassignment-and-roles.spec.ts` |
+| REQ-02-007 | Переназначение задачи с записью причины | ✅ | Адресатом может быть конкретный пользователь или роль (задача возвращается в очередь роли); причина обязательна на сервере и в UI, история в `TaskReassignment`. Тесты: `TaskInstanceServiceTest` (пустая причина, ровно один адресат, снятие исполнителя при возврате в очередь), `WorkflowFeaturesIntegrationTest.reassignmentTargetsEitherAPersonOrARoleQueue`, e2e `reassignment-and-roles.spec.ts` |
 | REQ-02-008 | Визуальная карта процесса | ✅ | Граф маршрута шаблона (`components/ProcessMap.tsx`): узлы ветвей в порядке приоритета, подсветка текущего шага, узел завершения; плюс `Stepper` по статусам и история событий. Редактирование маршрута — в конструкторе правил на странице шаблонов. Тест: e2e `features.spec.ts` |
 | REQ-02-009 | Подпроцессы проверки и допэкспертизы (SHOULD) | ✅ | API `POST /api/process-instances/{id}/sub-processes` и кнопка «Запустить подпроцесс» в карточке, обратный переход к родителю. Тесты: `WorkflowFeaturesIntegrationTest.subProcessIsLinkedToItsParent`, e2e `features.spec.ts` |
 | REQ-02-010 | События TaskCreated, TaskCompleted, SlaBreached, ProcessStateChanged | ✅ | Все четыре плюс ProcessStarted, TaskReassigned, SlaEscalated: `events/DomainEventType.java`; доставка через транзакционный outbox с DLQ — `events/OutboxPublisher.java`. Проверка доставки в Kafka — в `WorkflowGoldenPathIntegrationTest` |
@@ -123,7 +123,7 @@
 | Требования покрыты тест-кейсами, положительными и отрицательными | ✅ | 37 модульных + 50 интеграционных + 10 e2e. Отрицательные: матрица «роль × эндпоинт» на 39 случаев, доступ без токена по всем защищённым областям, старт по черновику, недопустимый переход статуса, отсутствие маршрута, пустая причина переназначения, скрытие чужих заявок |
 | API и события документированы, версионированы, проходят контрактную проверку | ✅ | OpenAPI/Swagger UI (`springdoc`) с проверкой контракта по всем публичным операциям (`ApiPermissionMatrixIntegrationTest.publishesTheOpenApiContract...`), схема событий и стабильность их имён — `EventEnvelopeContractTest` |
 | Аудит содержит действия пользователей и системных сервисов | ✅ | Действия пользователей и системного актора (`system`) по процессам, задачам, SLA, а также по шаблонам, правилам и SLA-политикам |
-| Разворачивается как независимый сервис, проходит health/readiness | ✅ | `docker-compose.yml`, `/actuator/health` с probes. Сборка образов в среде проверки не выполнялась — причина указана в README |
+| Разворачивается как независимый сервис, проходит health/readiness | ✅ | `docker-compose.yml`, `/actuator/health` с probes. Оба образа собраны и стек поднят целиком: бэкенд отвечает health-проверке, nginx отдаёт UI и проксирует `/api`, демо-данные засеяны, e2e проходит через контейнерный интерфейс |
 | Права доступа подтверждены тестами | ✅ | `ApiPermissionMatrixIntegrationTest`: 39 случаев «роль × эндпоинт» плюс проверка 401 по всем защищённым областям; в UI — e2e-сценарии ограничений аналитика и координатора |
 
 ## Сводка отклонений

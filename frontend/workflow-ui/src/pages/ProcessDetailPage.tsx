@@ -35,6 +35,7 @@ import { RoleGate } from '../auth/RoleGate';
 import { ROLES } from '../auth/authConfig';
 import { StatusChip } from '../components/StatusChip';
 import { PROCESS_STATUS_LABELS } from '../statusLabels';
+import { describeActionError } from '../api/errors';
 import { colors } from '../colors';
 
 const STEPS: ProcessInstanceStatus[] = ['NOT_STARTED', 'RUNNING', 'COMPLETED'];
@@ -122,8 +123,8 @@ export function ProcessDetailPage() {
                 try {
                   await resumeProcessInstance(instance.id);
                   load();
-                } catch {
-                  setActionError('Не удалось возобновить процесс.');
+                } catch (err) {
+                  setActionError(describeActionError(err, 'Не удалось возобновить процесс.'));
                 }
               }}
             >
@@ -232,8 +233,8 @@ export function ProcessDetailPage() {
                 setSuspendOpen(false);
                 setSuspendReason('');
                 load();
-              } catch {
-                setActionError('Не удалось приостановить процесс.');
+              } catch (err) {
+                setActionError(describeActionError(err, 'Не удалось приостановить процесс.'));
               }
             }}
           >
@@ -244,7 +245,7 @@ export function ProcessDetailPage() {
 
       <Dialog open={subOpen} onClose={() => setSubOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Запустить подпроцесс</DialogTitle>
-        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 3 }}>
           <TextField
             select
             label="Шаблон подпроцесса"
@@ -262,7 +263,12 @@ export function ProcessDetailPage() {
               </MenuItem>
             )}
           </TextField>
-          <TextField label="Бизнес-ключ" value={subBusinessKey} onChange={(e) => setSubBusinessKey(e.target.value)} />
+          <TextField
+            label="Бизнес-ключ"
+            value={subBusinessKey}
+            onChange={(e) => setSubBusinessKey(e.target.value)}
+            helperText="Собственный идентификатор подпроцесса, например номер родительской заявки с суффиксом -SUB"
+          />
           <TextField
             label="Атрибуты (JSON)"
             multiline
@@ -294,8 +300,8 @@ export function ProcessDetailPage() {
                 setSubOpen(false);
                 setSubBusinessKey('');
                 navigate(`/processes/${created.id}`);
-              } catch {
-                setActionError('Не удалось запустить подпроцесс.');
+              } catch (err) {
+                setActionError(describeActionError(err, 'Не удалось запустить подпроцесс.'));
               }
             }}
           >
@@ -325,10 +331,15 @@ export function ProcessDetailPage() {
             disabled={!cancelReason.trim()}
             onClick={async () => {
               if (!id) return;
-              await cancelProcessInstance(id, cancelReason);
-              setCancelOpen(false);
-              setCancelReason('');
-              load();
+              setActionError(null);
+              try {
+                await cancelProcessInstance(id, cancelReason);
+                setCancelOpen(false);
+                setCancelReason('');
+                load();
+              } catch (err) {
+                setActionError(describeActionError(err, 'Не удалось отменить процесс.'));
+              }
             }}
           >
             Подтвердить отмену
