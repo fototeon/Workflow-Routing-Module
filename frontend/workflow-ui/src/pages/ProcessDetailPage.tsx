@@ -35,6 +35,7 @@ import { RoleGate } from '../auth/RoleGate';
 import { ROLES } from '../auth/authConfig';
 import { StatusChip } from '../components/StatusChip';
 import { PROCESS_STATUS_LABELS } from '../statusLabels';
+import { describeActionError } from '../api/errors';
 import { colors } from '../colors';
 
 const STEPS: ProcessInstanceStatus[] = ['NOT_STARTED', 'RUNNING', 'COMPLETED'];
@@ -122,8 +123,8 @@ export function ProcessDetailPage() {
                 try {
                   await resumeProcessInstance(instance.id);
                   load();
-                } catch {
-                  setActionError('Не удалось возобновить процесс.');
+                } catch (err) {
+                  setActionError(describeActionError(err, 'Не удалось возобновить процесс.'));
                 }
               }}
             >
@@ -232,8 +233,8 @@ export function ProcessDetailPage() {
                 setSuspendOpen(false);
                 setSuspendReason('');
                 load();
-              } catch {
-                setActionError('Не удалось приостановить процесс.');
+              } catch (err) {
+                setActionError(describeActionError(err, 'Не удалось приостановить процесс.'));
               }
             }}
           >
@@ -299,8 +300,8 @@ export function ProcessDetailPage() {
                 setSubOpen(false);
                 setSubBusinessKey('');
                 navigate(`/processes/${created.id}`);
-              } catch {
-                setActionError('Не удалось запустить подпроцесс.');
+              } catch (err) {
+                setActionError(describeActionError(err, 'Не удалось запустить подпроцесс.'));
               }
             }}
           >
@@ -330,10 +331,15 @@ export function ProcessDetailPage() {
             disabled={!cancelReason.trim()}
             onClick={async () => {
               if (!id) return;
-              await cancelProcessInstance(id, cancelReason);
-              setCancelOpen(false);
-              setCancelReason('');
-              load();
+              setActionError(null);
+              try {
+                await cancelProcessInstance(id, cancelReason);
+                setCancelOpen(false);
+                setCancelReason('');
+                load();
+              } catch (err) {
+                setActionError(describeActionError(err, 'Не удалось отменить процесс.'));
+              }
             }}
           >
             Подтвердить отмену

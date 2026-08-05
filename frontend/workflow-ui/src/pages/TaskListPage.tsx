@@ -23,7 +23,7 @@ import {
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
 import { completeTask, reassignTask, searchTasks } from '../api/tasks';
-import { describeLoadError } from '../api/errors';
+import { describeActionError, describeLoadError } from '../api/errors';
 import { downloadCsv } from '../api/analytics';
 import { SavedViews } from '../components/SavedViews';
 import DownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
@@ -48,6 +48,7 @@ export function TaskListPage() {
   const [reassignReason, setReassignReason] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [sort, setSort] = useState<{ field: string; direction: 'asc' | 'desc' }>({ field: 'createdAt', direction: 'desc' });
   const [selected, setSelected] = useState<string[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -81,6 +82,11 @@ export function TaskListPage() {
           {loadError}
         </Alert>
       )}
+      {actionError && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+          {actionError}
+        </Alert>
+      )}
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2, gap: 2, flexWrap: 'wrap' }}>
         <SavedViews
           storageKey="workflow.views.tasks"
@@ -96,6 +102,7 @@ export function TaskListPage() {
               disabled={selected.length === 0 || bulkBusy}
               onClick={async () => {
                 setBulkBusy(true);
+                setActionError(null);
                 try {
                   // Bulk action within the caller's rights (TZ §9): each task goes through the same
                   // endpoint as the single-row action, so the server re-checks every one of them.
@@ -103,9 +110,11 @@ export function TaskListPage() {
                     await completeTask(taskId);
                   }
                   setSelected([]);
-                  setReloadKey((k) => k + 1);
+                } catch (err) {
+                  setActionError(describeActionError(err, 'Не удалось выполнить часть задач.'));
                 } finally {
                   setBulkBusy(false);
+                  setReloadKey((k) => k + 1);
                 }
               }}
             >
@@ -210,8 +219,13 @@ export function TaskListPage() {
                       <Button
                         size="small"
                         onClick={async () => {
-                          await completeTask(row.id);
-                          setReloadKey((k) => k + 1);
+                          setActionError(null);
+                          try {
+                            await completeTask(row.id);
+                            setReloadKey((k) => k + 1);
+                          } catch (err) {
+                            setActionError(describeActionError(err, 'Не удалось выполнить задачу.'));
+                          }
                         }}
                       >
                         Выполнить
@@ -272,11 +286,16 @@ export function TaskListPage() {
             disabled={!reassignTo.trim() || !reassignReason.trim()}
             onClick={async () => {
               if (!reassignTarget) return;
-              await reassignTask(reassignTarget.id, reassignTo, reassignReason);
-              setReassignTarget(null);
-              setReassignTo('');
-              setReassignReason('');
-              setReloadKey((k) => k + 1);
+              setActionError(null);
+              try {
+                await reassignTask(reassignTarget.id, reassignTo, reassignReason);
+                setReassignTarget(null);
+                setReassignTo('');
+                setReassignReason('');
+                setReloadKey((k) => k + 1);
+              } catch (err) {
+                setActionError(describeActionError(err, 'Не удалось переназначить задачу.'));
+              }
             }}
           >
             Подтвердить

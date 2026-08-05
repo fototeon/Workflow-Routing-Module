@@ -24,7 +24,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { listPublishedProcessDefinitions } from '../api/processDefinitions';
 import { searchProcessInstances, startProcessInstance } from '../api/processInstances';
-import { describeLoadError } from '../api/errors';
+import { describeActionError, describeLoadError } from '../api/errors';
 import { downloadCsv } from '../api/analytics';
 import { SavedViews } from '../components/SavedViews';
 import DownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
@@ -300,7 +300,7 @@ export function ProcessListPage() {
                 setReloadKey((k) => k + 1);
                 navigate(`/processes/${created.id}`);
               } catch (err) {
-                setStartError(err instanceof Error ? err.message : 'Не удалось запустить процесс.');
+                setStartError(describeActionError(err, 'Не удалось запустить процесс.'));
               }
             }}
           >
