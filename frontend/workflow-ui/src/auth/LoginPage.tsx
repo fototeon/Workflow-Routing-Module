@@ -53,14 +53,9 @@ export function LoginPage() {
           >
             W
           </Avatar>
-          <Box>
-            <Typography variant="h6" sx={{ color: colors.text.heading, fontWeight: 700, lineHeight: 1.2 }}>
-              Workflow Модуль
-            </Typography>
-            <Typography variant="caption" sx={{ color: colors.text.caption }}>
-              TZ-02-WORKFLOW
-            </Typography>
-          </Box>
+          <Typography variant="subtitle1" sx={{ color: colors.text.heading, fontWeight: 700, lineHeight: 1.35 }}>
+            Модуль управления процессами и маршрутизацией
+          </Typography>
         </Box>
 
         <Typography variant="body2" sx={{ color: colors.text.secondary }}>

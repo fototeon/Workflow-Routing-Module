@@ -78,14 +78,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
           >
             W
           </Avatar>
-          <Box>
-            <Typography variant="subtitle1" sx={{ color: colors.text.heading, fontWeight: 700, lineHeight: 1.2 }}>
-              Workflow Модуль
-            </Typography>
-            <Typography variant="caption" sx={{ color: colors.text.caption }}>
-              TZ-02-WORKFLOW
-            </Typography>
-          </Box>
+          <Typography variant="subtitle2" sx={{ color: colors.text.heading, fontWeight: 700, lineHeight: 1.35 }}>
+            Модуль управления процессами и маршрутизацией
+          </Typography>
         </Box>
 
         <List sx={{ px: 1.5, flexGrow: 1 }}>
