@@ -13,8 +13,8 @@ target/
 node_modules/
 dist/
 .vite/
-frontend/workflow-ui/playwright-report/
-frontend/workflow-ui/test-results/
+playwright-report/
+test-results/
 
 # Env / secrets
 .env

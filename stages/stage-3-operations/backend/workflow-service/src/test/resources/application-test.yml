@@ -1,0 +1,5 @@
+workflow:
+  outbox:
+    poll-interval-ms: 500
+  sla:
+    scan-interval-ms: 2000
