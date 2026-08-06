@@ -14,6 +14,8 @@ public interface ProcessDefinitionRepository extends JpaRepository<ProcessDefini
 
     List<ProcessDefinition> findByStatusOrderByCodeAscVersionDesc(ProcessDefinitionStatus status);
 
+    List<ProcessDefinition> findAllByOrderByCodeAscVersionDesc();
+
     Optional<ProcessDefinition> findFirstByCodeAndStatusOrderByVersionDesc(String code, ProcessDefinitionStatus status);
 
     boolean existsByCodeAndVersion(String code, int version);

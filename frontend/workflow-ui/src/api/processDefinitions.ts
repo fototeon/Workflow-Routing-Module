@@ -25,6 +25,12 @@ export async function listPublishedProcessDefinitions(): Promise<ProcessDefiniti
   return data;
 }
 
+/** The whole registry — drafts and archived templates included — for the administration screen. */
+export async function listAllProcessDefinitions(): Promise<ProcessDefinition[]> {
+  const { data } = await apiClient.get<ProcessDefinition[]>('/process-definitions', { params: { status: 'ALL' } });
+  return data;
+}
+
 export async function getProcessDefinition(id: string): Promise<ProcessDefinition> {
   const { data } = await apiClient.get<ProcessDefinition>(`/process-definitions/${id}`);
   return data;

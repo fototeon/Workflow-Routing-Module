@@ -23,6 +23,7 @@ import java.util.Map;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class ProcessDefinitionService {
@@ -177,14 +178,45 @@ public class ProcessDefinitionService {
                 .orElseThrow(() -> new EntityNotFoundException("ProcessDefinition " + id + " not found"));
     }
 
+    /**
+     * A template together with how many routing rules it carries. The catalogue screen needs the
+     * count to show why a draft cannot be published yet ({@link #publish} rejects rule-less drafts).
+     */
+    public record DefinitionSummary(ProcessDefinition definition, long routingRuleCount) {
+    }
+
+    /**
+     * The template catalogue: every version of one {@code code}, or every template in one
+     * {@code status}, or — when both are null — the whole registry including drafts and archives.
+     */
     @Transactional(readOnly = true)
-    public List<ProcessDefinition> listVersions(String code) {
-        return processDefinitionRepository.findByCodeOrderByVersionDesc(code);
+    public List<DefinitionSummary> list(String code, ProcessDefinitionStatus status) {
+        List<ProcessDefinition> definitions;
+        if (code != null && !code.isBlank()) {
+            definitions = processDefinitionRepository.findByCodeOrderByVersionDesc(code);
+        } else if (status == null) {
+            definitions = processDefinitionRepository.findAllByOrderByCodeAscVersionDesc();
+        } else {
+            definitions = processDefinitionRepository.findByStatusOrderByCodeAscVersionDesc(status);
+        }
+        return withRuleCounts(definitions);
     }
 
     @Transactional(readOnly = true)
-    public List<ProcessDefinition> listPublished() {
-        return processDefinitionRepository.findByStatusOrderByCodeAscVersionDesc(ProcessDefinitionStatus.PUBLISHED);
+    public DefinitionSummary getSummary(UUID id) {
+        return withRuleCounts(List.of(get(id))).getFirst();
+    }
+
+    private List<DefinitionSummary> withRuleCounts(List<ProcessDefinition> definitions) {
+        if (definitions.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Long> counts = routingRuleRepository
+                .countByProcessDefinitionIds(definitions.stream().map(ProcessDefinition::getId).toList()).stream()
+                .collect(Collectors.toMap(row -> (UUID) row[0], row -> (Long) row[1]));
+        return definitions.stream()
+                .map(definition -> new DefinitionSummary(definition, counts.getOrDefault(definition.getId(), 0L)))
+                .toList();
     }
 
     private int nextVersion(String code) {

@@ -24,6 +24,8 @@ public final class ProcessDefinitionDtos {
             int version,
             String status,
             UUID slaPolicyId,
+            /** How many routing rules the template carries; a draft with zero cannot be published. */
+            long routingRuleCount,
             Instant createdAt,
             Instant updatedAt
     ) {

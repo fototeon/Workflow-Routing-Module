@@ -210,7 +210,88 @@ class WorkflowFeaturesIntegrationTest extends AbstractIntegrationTest {
                 .andExpect(status().isForbidden());
     }
 
+    /**
+     * The template catalogue an administrator works with: drafts have to be listed (the default
+     * listing serves the "start a process" picker and shows published templates only), each row
+     * carries its routing-rule count, and a draft without rules cannot be published — which is why
+     * the UI keeps the publish button disabled until the first rule is added.
+     */
+    @Test
+    void theTemplateCatalogueListsDraftsWithRuleCountsAndRefusesToPublishRulelessOnes() throws Exception {
+        String code = "CATALOG_" + System.nanoTime();
+        UUID draftId = draftDefinition(code);
+
+        String publishedOnly = mockMvc.perform(get("/api/process-definitions")
+                        .with(jwt().authorities(role("ADMIN"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        assertThat(catalogueRow(publishedOnly, draftId)).isNull();
+
+        JsonNode draftRow = catalogueRow(catalogue("ALL"), draftId);
+        assertThat(draftRow).isNotNull();
+        assertThat(draftRow.get("status").asText()).isEqualTo("DRAFT");
+        assertThat(draftRow.get("routingRuleCount").asLong()).isZero();
+
+        mockMvc.perform(post("/api/process-definitions/{id}/publish", draftId)
+                        .with(jwt().authorities(role("ADMIN"))))
+                .andExpect(status().isConflict());
+
+        addRoutingRule(draftId);
+        assertThat(catalogueRow(catalogue("DRAFT"), draftId).get("routingRuleCount").asLong()).isEqualTo(1);
+
+        mockMvc.perform(post("/api/process-definitions/{id}/publish", draftId)
+                        .with(jwt().authorities(role("ADMIN"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.routingRuleCount").value(1));
+
+        assertThat(catalogueRow(catalogue("DRAFT"), draftId)).isNull();
+        assertThat(catalogueRow(catalogue("PUBLISHED"), draftId)).isNotNull();
+
+        mockMvc.perform(get("/api/process-definitions").param("status", "NONSENSE")
+                        .with(jwt().authorities(role("ADMIN"))))
+                .andExpect(status().isBadRequest());
+    }
+
     // --- helpers -------------------------------------------------------------------------------
+
+    private String catalogue(String status) throws Exception {
+        return mockMvc.perform(get("/api/process-definitions").param("status", status)
+                        .with(jwt().authorities(role("ADMIN"))))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+    }
+
+    /** The catalogue row for one template, or {@code null} when the listing filtered it out. */
+    private JsonNode catalogueRow(String listing, UUID definitionId) throws Exception {
+        for (JsonNode row : objectMapper.readTree(listing)) {
+            if (row.get("id").asText().equals(definitionId.toString())) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    private UUID draftDefinition(String code) throws Exception {
+        String defBody = objectMapper.writeValueAsString(Map.of("code", code, "name", "Process " + code));
+        String defResponse = mockMvc.perform(post("/api/process-definitions")
+                        .with(jwt().authorities(role("ADMIN")))
+                        .contentType(MediaType.APPLICATION_JSON).content(defBody))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.routingRuleCount").value(0))
+                .andReturn().getResponse().getContentAsString();
+        return UUID.fromString(objectMapper.readTree(defResponse).get("id").asText());
+    }
+
+    private void addRoutingRule(UUID definitionId) throws Exception {
+        String ruleBody = objectMapper.writeValueAsString(Map.of(
+                "name", "route-complex", "priority", 10,
+                "conditionTree", objectMapper.readTree("{\"type\":\"condition\",\"field\":\"requestType\",\"op\":\"EQ\",\"value\":\"COMPLEX\"}"),
+                "targetStepCode", "EXPERT_REVIEW", "targetRole", "COORDINATOR"));
+        mockMvc.perform(post("/api/process-definitions/{id}/routing-rules", definitionId)
+                        .with(jwt().authorities(role("ADMIN")))
+                        .contentType(MediaType.APPLICATION_JSON).content(ruleBody))
+                .andExpect(status().isCreated());
+    }
 
     private UUID publishedDefinition(String code) throws Exception {
         String slaBody = objectMapper.writeValueAsString(Map.of(

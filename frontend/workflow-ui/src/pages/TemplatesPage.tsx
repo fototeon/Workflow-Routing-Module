@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
+  Autocomplete,
   Box,
   Button,
   Divider,
@@ -15,6 +17,7 @@ import {
   TextField,
   ToggleButton,
   ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -25,7 +28,7 @@ import {
   createProcessDefinition,
   deleteRoutingRule,
   getProcessDefinitionJournal,
-  listProcessDefinitionVersions,
+  listAllProcessDefinitions,
   listRoutingRules,
   publishProcessDefinition,
 } from '../api/processDefinitions';
@@ -34,12 +37,14 @@ import type {
   ConditionNode,
   LeafCondition,
   ProcessDefinition,
+  ProcessDefinitionStatus,
   ProcessEventLogEntry,
   RoutingRule,
   SlaPolicy,
 } from '../api/types';
 import { StatusChip } from '../components/StatusChip';
 import { DEFINITION_STATUS_LABELS } from '../statusLabels';
+import { describeActionError, describeLoadError } from '../api/errors';
 import { colors } from '../colors';
 
 interface LeafDraft {
@@ -49,6 +54,18 @@ interface LeafDraft {
 }
 
 const COMPARISON_OPS = ['EQ', 'NEQ', 'GT', 'GTE', 'LT', 'LTE', 'IN', 'NOT_IN', 'CONTAINS', 'EXISTS'];
+
+/** Suggested priorities, spaced so a rule can always be squeezed between two existing ones later. */
+const PRIORITY_SUGGESTIONS = ['10', '20', '30'];
+
+type StatusFilter = 'ALL' | ProcessDefinitionStatus;
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'ALL', label: 'Все' },
+  { value: 'DRAFT', label: 'Черновики' },
+  { value: 'PUBLISHED', label: 'Опубликованные' },
+  { value: 'ARCHIVED', label: 'Архив' },
+];
 
 function buildConditionTree(groupOp: 'AND' | 'OR', leaves: LeafDraft[]): ConditionNode {
   const children: ConditionNode[] = leaves.map((leaf) => ({
@@ -74,13 +91,21 @@ function parseLeafValue(raw: string): unknown {
   return trimmed;
 }
 
+function isValidPriority(raw: string): boolean {
+  const trimmed = raw.trim();
+  return trimmed !== '' && Number.isInteger(Number(trimmed)) && Number(trimmed) >= 0;
+}
+
 export function TemplatesPage() {
   const [definitions, setDefinitions] = useState<ProcessDefinition[]>([]);
   const [slaPolicies, setSlaPolicies] = useState<SlaPolicy[]>([]);
-  const [searchCode, setSearchCode] = useState('');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('ALL');
+  const [searchText, setSearchText] = useState('');
   const [selected, setSelected] = useState<ProcessDefinition | null>(null);
   const [rules, setRules] = useState<RoutingRule[]>([]);
   const [journal, setJournal] = useState<ProcessEventLogEntry[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [newCode, setNewCode] = useState('');
   const [newName, setNewName] = useState('');
@@ -88,58 +113,146 @@ export function TemplatesPage() {
 
   const [editorMode, setEditorMode] = useState<'visual' | 'json'>('visual');
   const [ruleName, setRuleName] = useState('');
-  const [rulePriority, setRulePriority] = useState(0);
+  const [rulePriority, setRulePriority] = useState('');
   const [targetStepCode, setTargetStepCode] = useState('');
   const [targetRole, setTargetRole] = useState('');
   const [groupOp, setGroupOp] = useState<'AND' | 'OR'>('AND');
   const [leaves, setLeaves] = useState<LeafDraft[]>([{ field: '', op: 'EQ', value: '' }]);
   const [rawJson, setRawJson] = useState('{\n  "type": "condition",\n  "field": "",\n  "op": "EQ",\n  "value": ""\n}');
 
-  useEffect(() => {
-    listSlaPolicies().then(setSlaPolicies);
+  /** The catalogue is loaded whole and filtered in the browser: the registry of templates is small. */
+  const reloadCatalogue = useCallback(async () => {
+    try {
+      const all = await listAllProcessDefinitions();
+      setDefinitions(all);
+      setLoadError(null);
+      return all;
+    } catch (error) {
+      setLoadError(describeLoadError(error, 'шаблоны процессов'));
+      return [];
+    }
   }, []);
 
-  const loadRules = (definitionId: string) => {
-    listRoutingRules(definitionId).then(setRules);
-  };
+  useEffect(() => {
+    reloadCatalogue();
+    listSlaPolicies().then(setSlaPolicies).catch(() => setSlaPolicies([]));
+  }, [reloadCatalogue]);
 
-  const searchDefinitions = () => {
-    if (!searchCode.trim()) return;
-    listProcessDefinitionVersions(searchCode.trim()).then(setDefinitions);
+  const visibleDefinitions = useMemo(() => {
+    const needle = searchText.trim().toLowerCase();
+    return definitions.filter((def) => {
+      if (statusFilter !== 'ALL' && def.status !== statusFilter) return false;
+      if (!needle) return true;
+      return def.code.toLowerCase().includes(needle) || def.name.toLowerCase().includes(needle);
+    });
+  }, [definitions, statusFilter, searchText]);
+
+  /** Rules and journal of the opened template; the journal grows with every change (TZ §10, REQ-02-002). */
+  const loadDetails = (definitionId: string) => {
+    listRoutingRules(definitionId).then(setRules).catch(() => setRules([]));
+    getProcessDefinitionJournal(definitionId).then(setJournal).catch(() => setJournal([]));
   };
 
   const selectDefinition = (def: ProcessDefinition) => {
     setSelected(def);
-    loadRules(def.id);
-    // Configuration journal of the template (TZ §10, REQ-02-002).
-    getProcessDefinitionJournal(def.id).then(setJournal).catch(() => setJournal([]));
+    setActionError(null);
+    loadDetails(def.id);
   };
+
+  /** Keeps the catalogue row and the opened template in sync after publish/archive/rule changes. */
+  const applyDefinitionUpdate = (updated: ProcessDefinition) => {
+    setSelected(updated);
+    setDefinitions((prev) => prev.map((def) => (def.id === updated.id ? updated : def)));
+  };
+
+  const canPublish = selected?.status === 'DRAFT' && rules.length > 0;
+
+  /** Placeholder for the priority field: the next slot after the rules already in the template. */
+  const nextFreePriority = String(rules.reduce((max, rule) => Math.max(max, rule.priority), 0) + 10);
 
   return (
     <Box>
+      {loadError && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {loadError}
+        </Alert>
+      )}
       <Grid container spacing={3}>
         <Grid size={{ xs: 12, md: 4 }}>
           <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-            <Typography variant="subtitle1" gutterBottom>
-              Поиск по коду
-            </Typography>
-            <Stack direction="row" spacing={1}>
-              <TextField
-                size="small"
-                label="Код процесса"
-                value={searchCode}
-                onChange={(e) => setSearchCode(e.target.value)}
-              />
-              <Button onClick={searchDefinitions}>Найти</Button>
+            <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'baseline', mb: 1 }}>
+              <Typography variant="subtitle1">Каталог шаблонов</Typography>
+              <Typography variant="caption" sx={{ color: colors.text.caption }}>
+                {visibleDefinitions.length} из {definitions.length}
+              </Typography>
             </Stack>
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={statusFilter}
+              onChange={(_, v: StatusFilter | null) => v && setStatusFilter(v)}
+              sx={{ mb: 1, flexWrap: 'wrap' }}
+            >
+              {STATUS_FILTERS.map((filter) => (
+                <ToggleButton key={filter.value} value={filter.value}>
+                  {filter.label}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+            <TextField
+              fullWidth
+              size="small"
+              label="Фильтр по коду или названию"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+            />
             <List dense>
-              {definitions.map((def) => (
+              {visibleDefinitions.map((def) => (
                 <ListItem key={def.id} disablePadding>
                   <ListItemButton selected={selected?.id === def.id} onClick={() => selectDefinition(def)}>
-                    <ListItemText primary={`${def.code} v${def.version}`} secondary={DEFINITION_STATUS_LABELS[def.status].label} />
+                    <ListItemText
+                      disableTypography
+                      primary={
+                        <Typography variant="body2" sx={{ color: colors.text.body, fontWeight: 600 }}>
+                          {def.code}{' '}
+                          <Box component="span" sx={{ color: colors.text.caption, fontWeight: 400 }}>
+                            v{def.version}
+                          </Box>
+                        </Typography>
+                      }
+                      secondary={
+                        <Box>
+                          <Typography variant="caption" sx={{ color: colors.text.caption, display: 'block' }}>
+                            {def.name}
+                          </Typography>
+                          <Stack direction="row" spacing={1} sx={{ mt: 0.5, alignItems: 'center' }}>
+                            <StatusChip
+                              label={DEFINITION_STATUS_LABELS[def.status].label}
+                              tone={DEFINITION_STATUS_LABELS[def.status].tone}
+                            />
+                            <Typography variant="caption" sx={{ color: colors.text.caption }}>
+                              правил: {def.routingRuleCount}
+                            </Typography>
+                          </Stack>
+                        </Box>
+                      }
+                    />
                   </ListItemButton>
                 </ListItem>
               ))}
+              {visibleDefinitions.length === 0 && (
+                <ListItem>
+                  <ListItemText
+                    primary={
+                      <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+                        {definitions.length === 0
+                          ? 'Шаблонов пока нет — создайте первый черновик ниже.'
+                          : 'Под фильтр ничего не подошло.'}
+                      </Typography>
+                    }
+                  />
+                </ListItem>
+              )}
             </List>
           </Paper>
 
@@ -168,17 +281,22 @@ export function TemplatesPage() {
                 variant="contained"
                 disabled={!newCode.trim() || !newName.trim()}
                 onClick={async () => {
-                  const created = await createProcessDefinition({
-                    code: newCode,
-                    name: newName,
-                    slaPolicyId: newSlaPolicyId || null,
-                  });
-                  setNewCode('');
-                  setNewName('');
-                  setNewSlaPolicyId('');
-                  setSearchCode(created.code);
-                  listProcessDefinitionVersions(created.code).then(setDefinitions);
-                  selectDefinition(created);
+                  try {
+                    const created = await createProcessDefinition({
+                      code: newCode,
+                      name: newName,
+                      slaPolicyId: newSlaPolicyId || null,
+                    });
+                    setNewCode('');
+                    setNewName('');
+                    setNewSlaPolicyId('');
+                    setStatusFilter('ALL');
+                    setSearchText('');
+                    await reloadCatalogue();
+                    selectDefinition(created);
+                  } catch (error) {
+                    setActionError(describeActionError(error, 'Не удалось создать шаблон.'));
+                  }
                 }}
               >
                 Создать
@@ -188,13 +306,21 @@ export function TemplatesPage() {
         </Grid>
 
         <Grid size={{ xs: 12, md: 8 }}>
-          {!selected && <Typography color="text.secondary">Выберите или создайте шаблон процесса.</Typography>}
+          {!selected && <Typography color="text.secondary">Выберите шаблон в каталоге или создайте новый черновик.</Typography>}
           {selected && (
             <Paper variant="outlined" sx={{ p: 2 }}>
+              {actionError && (
+                <Alert severity="error" sx={{ mb: 2 }} onClose={() => setActionError(null)}>
+                  {actionError}
+                </Alert>
+              )}
               <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                 <Box>
                   <Typography variant="h6">
                     {selected.code} v{selected.version}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: colors.text.secondary }}>
+                    {selected.name}
                   </Typography>
                   <Box sx={{ mt: 0.5 }}>
                     <StatusChip
@@ -205,23 +331,44 @@ export function TemplatesPage() {
                 </Box>
                 <Stack direction="row" spacing={1}>
                   {selected.status === 'DRAFT' && (
-                    <Button
-                      variant="outlined"
-                      onClick={async () => {
-                        const published = await publishProcessDefinition(selected.id);
-                        setSelected(published);
-                      }}
+                    <Tooltip
+                      title={
+                        canPublish
+                          ? 'Опубликовать: шаблон станет доступен для запуска процессов, правила больше не редактируются.'
+                          : 'Сначала добавьте хотя бы одно правило маршрутизации — без него процесс не сможет определить следующий шаг.'
+                      }
                     >
-                      Опубликовать
-                    </Button>
+                      <span>
+                        <Button
+                          variant="contained"
+                          disabled={!canPublish}
+                          onClick={async () => {
+                            try {
+                              applyDefinitionUpdate(await publishProcessDefinition(selected.id));
+                              loadDetails(selected.id);
+                              setActionError(null);
+                            } catch (error) {
+                              setActionError(describeActionError(error, 'Не удалось опубликовать шаблон.'));
+                            }
+                          }}
+                        >
+                          Опубликовать
+                        </Button>
+                      </span>
+                    </Tooltip>
                   )}
                   {selected.status !== 'ARCHIVED' && (
                     <Button
                       color="warning"
                       variant="outlined"
                       onClick={async () => {
-                        const archived = await archiveProcessDefinition(selected.id);
-                        setSelected(archived);
+                        try {
+                          applyDefinitionUpdate(await archiveProcessDefinition(selected.id));
+                          loadDetails(selected.id);
+                          setActionError(null);
+                        } catch (error) {
+                          setActionError(describeActionError(error, 'Не удалось отправить шаблон в архив.'));
+                        }
                       }}
                     >
                       В архив
@@ -230,8 +377,18 @@ export function TemplatesPage() {
                 </Stack>
               </Stack>
 
+              {selected.status === 'DRAFT' && (
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Черновик собирается в три шага: <b>1)</b> создать шаблон, <b>2)</b> добавить правила маршрутизации —
+                  каждое кнопкой «Добавить правило», их может быть сколько угодно, <b>3)</b> нажать «Опубликовать»,
+                  чтобы по шаблону можно было запускать процессы. Пока правил нет, публикация недоступна: процессу
+                  нечем будет выбрать следующий шаг. После публикации правила менять нельзя — новая версия создаётся
+                  отдельным шаблоном с тем же кодом.
+                </Alert>
+              )}
+
               <Typography variant="subtitle1" gutterBottom>
-                Правила маршрутизации
+                Правила маршрутизации ({rules.length})
               </Typography>
               <List dense sx={{ mb: 2 }}>
                 {rules.map((rule) => (
@@ -242,8 +399,13 @@ export function TemplatesPage() {
                         <IconButton
                           edge="end"
                           onClick={async () => {
-                            await deleteRoutingRule(selected.id, rule.id);
-                            loadRules(selected.id);
+                            try {
+                              await deleteRoutingRule(selected.id, rule.id);
+                              loadDetails(selected.id);
+                              await reloadCatalogue();
+                            } catch (error) {
+                              setActionError(describeActionError(error, 'Не удалось удалить правило.'));
+                            }
                           }}
                         >
                           <DeleteIcon fontSize="small" />
@@ -270,24 +432,56 @@ export function TemplatesPage() {
                     Добавить правило маршрутизации
                   </Typography>
                   <Stack spacing={2}>
-                    <Stack direction="row" spacing={2}>
-                      <TextField size="small" label="Название правила" value={ruleName} onChange={(e) => setRuleName(e.target.value)} />
-                      <TextField
-                        size="small"
-                        type="number"
-                        label="Приоритет"
-                        value={rulePriority}
-                        onChange={(e) => setRulePriority(Number(e.target.value))}
-                        sx={{ width: 120 }}
-                      />
-                      <TextField
-                        size="small"
-                        label="Код целевого шага"
-                        value={targetStepCode}
-                        onChange={(e) => setTargetStepCode(e.target.value)}
-                      />
-                      <TextField size="small" label="Целевая роль" value={targetRole} onChange={(e) => setTargetRole(e.target.value)} />
-                    </Stack>
+                    <Grid container spacing={2}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <TextField
+                          fullWidth
+                          required
+                          size="small"
+                          label="Название правила"
+                          value={ruleName}
+                          onChange={(e) => setRuleName(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <Autocomplete
+                          freeSolo
+                          size="small"
+                          options={PRIORITY_SUGGESTIONS}
+                          value={rulePriority}
+                          onChange={(_, value) => setRulePriority(value ?? '')}
+                          onInputChange={(_, value) => setRulePriority(value)}
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              required
+                              label="Приоритет"
+                              placeholder={nextFreePriority}
+                              helperText="Меньше — правило проверяется раньше"
+                            />
+                          )}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <TextField
+                          fullWidth
+                          required
+                          size="small"
+                          label="Код целевого шага"
+                          value={targetStepCode}
+                          onChange={(e) => setTargetStepCode(e.target.value)}
+                        />
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          label="Целевая роль"
+                          value={targetRole}
+                          onChange={(e) => setTargetRole(e.target.value)}
+                        />
+                      </Grid>
+                    </Grid>
 
                     <ToggleButtonGroup
                       size="small"
@@ -372,23 +566,29 @@ export function TemplatesPage() {
                     <Box>
                       <Button
                         variant="contained"
-                        disabled={!ruleName.trim() || !targetStepCode.trim()}
+                        disabled={!ruleName.trim() || !targetStepCode.trim() || !isValidPriority(rulePriority)}
                         onClick={async () => {
-                          const conditionTree: ConditionNode =
-                            editorMode === 'visual' ? buildConditionTree(groupOp, leaves) : JSON.parse(rawJson);
-                          await addRoutingRule(selected.id, {
-                            name: ruleName,
-                            priority: rulePriority,
-                            conditionTree,
-                            targetStepCode,
-                            targetRole: targetRole || null,
-                          });
-                          setRuleName('');
-                          setRulePriority(0);
-                          setTargetStepCode('');
-                          setTargetRole('');
-                          setLeaves([{ field: '', op: 'EQ', value: '' }]);
-                          loadRules(selected.id);
+                          try {
+                            const conditionTree: ConditionNode =
+                              editorMode === 'visual' ? buildConditionTree(groupOp, leaves) : JSON.parse(rawJson);
+                            await addRoutingRule(selected.id, {
+                              name: ruleName,
+                              priority: Number(rulePriority),
+                              conditionTree,
+                              targetStepCode,
+                              targetRole: targetRole || null,
+                            });
+                            setRuleName('');
+                            setRulePriority('');
+                            setTargetStepCode('');
+                            setTargetRole('');
+                            setLeaves([{ field: '', op: 'EQ', value: '' }]);
+                            loadDetails(selected.id);
+                            await reloadCatalogue();
+                            setActionError(null);
+                          } catch (error) {
+                            setActionError(describeActionError(error, 'Не удалось добавить правило.'));
+                          }
                         }}
                       >
                         Добавить правило

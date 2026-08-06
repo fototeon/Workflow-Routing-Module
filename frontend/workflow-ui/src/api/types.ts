@@ -29,6 +29,8 @@ export interface ProcessDefinition {
   version: number;
   status: ProcessDefinitionStatus;
   slaPolicyId: string | null;
+  /** A draft without routing rules cannot be published — the catalogue shows this to explain why. */
+  routingRuleCount: number;
   createdAt: string;
   updatedAt: string;
 }
