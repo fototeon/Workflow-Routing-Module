@@ -1,0 +1,86 @@
+{
+  "realm": "workflow",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 3600,
+  "roles": {
+    "realm": [
+      { "name": "ADMIN", "description": "Manages users, roles, reference data, settings and integrations" },
+      { "name": "MANAGER", "description": "Assigns executors, approves decisions, controls deadlines and quality" },
+      { "name": "COORDINATOR", "description": "Checks completeness, accompanies the process, controls deadlines" },
+      { "name": "ANALYST", "description": "Builds reports, dashboards and exports; read-only" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "workflow-ui",
+      "name": "Workflow UI",
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "enabled": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:5173/*"],
+      "webOrigins": ["http://localhost:5173"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      }
+    },
+    {
+      "clientId": "workflow-service",
+      "name": "Workflow Service (resource server)",
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": true,
+      "enabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false
+    }
+  ],
+  "users": [
+    {
+      "username": "admin1",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin1@workflow.local",
+      "firstName": "Admin",
+      "lastName": "One",
+      "credentials": [{ "type": "password", "value": "admin123", "temporary": false }],
+      "realmRoles": ["ADMIN"]
+    },
+    {
+      "username": "manager1",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "manager1@workflow.local",
+      "firstName": "Manager",
+      "lastName": "One",
+      "credentials": [{ "type": "password", "value": "manager123", "temporary": false }],
+      "realmRoles": ["MANAGER"]
+    },
+    {
+      "username": "coordinator1",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "coordinator1@workflow.local",
+      "firstName": "Coordinator",
+      "lastName": "One",
+      "credentials": [{ "type": "password", "value": "coordinator123", "temporary": false }],
+      "realmRoles": ["COORDINATOR"]
+    },
+    {
+      "username": "analyst1",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "analyst1@workflow.local",
+      "firstName": "Analyst",
+      "lastName": "One",
+      "credentials": [{ "type": "password", "value": "analyst123", "temporary": false }],
+      "realmRoles": ["ANALYST"]
+    }
+  ]
+}
